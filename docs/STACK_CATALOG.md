@@ -69,6 +69,7 @@ Counts and number ranges are generated from `stacks/catalog.json` (source of tru
 - Stack IDs are unique and stable.
 - `stacks/catalog.json` is the source of truth; this table should eventually be generated from it. The catalog is validated against `schemas/catalog.schema.json`; the structural rules that JSON Schema cannot express (exactly 40 stacks, unique IDs, contiguous 1–40 numbering, ID/number agreement) are not part of this schema — the catalog validator implements them (tracked in PR #4, feat: generator CLI with tests).
 - Every stack `maturity` must be a member of the catalog's `maturityPolicy` (`proposed`, `spec-ready`, `scaffolded`, `verified`, `production-reference`, `blocked`) and every `category` must be a member of `categoryPolicy`. Both vocabularies are mirrored in the JSON Schemas.
+- Each catalog entry has a `stacks/<id>/stack.json` manifest. For entries 02–40 these are placeholders that only mirror catalog facts (id, category, `proposed` maturity); specification, environment, and verification content land with each stack's own task, and all verification gates stay `false` until real evidence exists.
 - Version validation must include framework/runtime compatibility, security support window, and platform limitations.
 - If a version is obsolete or incompatible, propose a documented replacement rather than silently changing it.
 - “Production-ready” requires the evidence listed in `docs/QUALITY_GATES.md`.

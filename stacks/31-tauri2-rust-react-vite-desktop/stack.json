@@ -1,0 +1,18 @@
+{
+  "id": "31-tauri2-rust-react-vite-desktop",
+  "name": "Tauri2 / Rust / React / Vite / Desktop",
+  "category": "desktop",
+  "maturity": "proposed",
+  "description": "Proposed catalog entry 31. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
+  "requires": [
+    "to-be-determined"
+  ],
+  "verification": {
+    "manifest": false,
+    "unit": false,
+    "integration": false,
+    "e2e": false,
+    "lastVerifiedAt": null,
+    "evidencePath": null
+  }
+}
