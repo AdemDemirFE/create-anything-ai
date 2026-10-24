@@ -259,4 +259,97 @@ describe('generateSkeleton hardening', () => {
       tmp.cleanup();
     }
   });
+
+  test('--force refuses to overwrite a symlink planted at a planned file path', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const out = path.join(tmp.path, 'proj');
+      fs.mkdirSync(out);
+      const victim = path.join(tmp.path, 'victim.txt');
+      fs.writeFileSync(victim, 'do not touch', 'utf8');
+
+      let made = 0;
+      for (const name of ['README.md', 'stack.json']) {
+        try {
+          fs.symlinkSync(victim, path.join(out, name), 'file');
+          made++;
+        } catch {
+          t.skip('symlinks not permitted on this host');
+          return;
+        }
+      }
+      assert.equal(made, 2);
+
+      // Without --force the symlinks are simply skipped (no overwrite attempt).
+      const skippedRun = generateSkeleton(fixtureStack(), out, { allowedRoot: tmp.path });
+      assert.deepEqual(skippedRun.skipped.sort(), ['README.md', 'stack.json']);
+      assert.equal(fs.readFileSync(victim, 'utf8'), 'do not touch');
+
+      // With --force the write must be refused instead of following the symlink.
+      assert.throws(
+        () => generateSkeleton(fixtureStack(), out, { allowedRoot: tmp.path, force: true }),
+        (err) => err.code === 'E_UNSAFE_PATH',
+      );
+      assert.equal(fs.readFileSync(victim, 'utf8'), 'do not touch', 'symlink target must survive --force');
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('--force refuses a symlink planted at a planned subdirectory path', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const out = path.join(tmp.path, 'proj');
+      fs.mkdirSync(out);
+      const outsideDir = path.join(tmp.path, 'outside');
+      fs.mkdirSync(outsideDir);
+
+      let made = false;
+      try {
+        fs.symlinkSync(outsideDir, path.join(out, 'docs'), 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+
+      assert.throws(
+        () => generateSkeleton(fixtureStack(), out, { allowedRoot: tmp.path, force: true }),
+        (err) => err.code === 'E_UNSAFE_PATH',
+      );
+      assert.deepEqual(fs.readdirSync(outsideDir), [], 'symlink target directory must stay empty');
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('--force refuses a symlink planted at a mid-level ancestor of a planned file', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const out = path.join(tmp.path, 'proj');
+      fs.mkdirSync(out);
+      const outsideDir = path.join(tmp.path, 'outside');
+      fs.mkdirSync(outsideDir);
+
+      let made = false;
+      try {
+        fs.symlinkSync(outsideDir, path.join(out, 'docs'), 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+
+      // A file under a symlinked planned directory must never be written.
+      assert.throws(
+        () => generateSkeleton(fixtureStack(), out, { allowedRoot: tmp.path, force: true }),
+        (err) => err.code === 'E_UNSAFE_PATH',
+      );
+      assert.deepEqual(fs.readdirSync(outsideDir), []);
+    } finally {
+      tmp.cleanup();
+    }
+  });
 });

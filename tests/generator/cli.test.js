@@ -117,6 +117,40 @@ describe('CLI: list / validate / status with a fixture catalog', () => {
   });
 });
 
+describe('CLI: error handling single source of truth', () => {
+  test('catalog read failure exits 4 with single CODE: prefix from lib/errors.js', () => {
+    const tmp = makeTempDir();
+    try {
+      // Point --catalog at a directory: readSync fails with EISDIR and the
+      // CLI must surface E_CATALOG_INVALID (exit 4) with exactly one
+      // "CODE: " prefix (no duplicated prefixes, no stack trace).
+      const { status, stderr } = runCli(['--catalog', tmp.path, 'list']);
+      assert.equal(status, 4, `expected exit 4, got stderr: ${stderr}`);
+      assert.match(stderr, /^E_CATALOG_INVALID: /, 'stderr uses CODE: message format');
+      assert.equal((stderr.match(/E_CATALOG_INVALID:/g) ?? []).length, 1, 'code prefix must not be duplicated');
+      assert.doesNotMatch(stderr, /at .+:\d+:\d+/, 'no stack trace on stderr');
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('E_USAGE exits 64 and E_INVALID_STACK exits 1 with CODE: message format', () => {
+    const usage = runCli(['no-such-command']);
+    assert.equal(usage.status, 64);
+    assert.match(usage.stderr, /^E_USAGE: /);
+
+    const tmp = makeTempDir();
+    try {
+      const catalogPath = writeFixtureCatalog(tmp.path, makeCatalog());
+      const invalid = runCli(['--catalog', catalogPath, 'generate', 'bad id', '--output', 'x']);
+      assert.equal(invalid.status, 1);
+      assert.match(invalid.stderr, /^E_INVALID_STACK: /);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+});
+
 describe('CLI: generate', () => {
   test('generates a skeleton from a valid stack id', () => {
     const tmp = makeTempDir();
