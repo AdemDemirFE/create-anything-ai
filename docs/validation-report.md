@@ -20,6 +20,11 @@ schemas + placeholder manifests, CI + secret-audit workflows) plus PR #4
 merged** — its results must be re-run after merge (see Part B placeholder at
 the end of this report).
 
+> Revision 2 (2026-10-24): incorporates fixes for the three AO review
+> findings from review run b73a99e3 — strict selfcheck catching criterion
+> (crash ≠ caught), crash-proof fallback engine (S05 / exit 3), and
+> evidencePath repo-root confinement (C10). See §9 for the follow-up table.
+
 ## 1. Catalog integrity — PASS (20 findings, 0 failed)
 
 Command: `python tests/integration/validate_catalog.py` (exit code 0)
@@ -66,6 +71,18 @@ Details checked beyond the raw output:
   `docs/STACK_CATALOG.md` (7 baas, 7 enterprise, 8 classic-web, 6 ai-native,
   2 mobile-first, 2 desktop, 2 native, 5 realtime, 1 realtime-3d) match the
   actual catalog contents (independently recomputed).
+- **evidencePath repo-root confinement (AO review, run b73a99e3, finding
+  3)**: C10 no longer trusts `evidencePath` as given. A claimed evidence
+  path must be a **repo-relative** path that resolves strictly inside the
+  repository root; otherwise it is rejected before existence is checked.
+  Verified regressions (each produced `[FAIL] C10`, exit 1):
+  - `..\..\evil\evidence.md` → "escapes the repository root (traversal
+    rejected; evidence must live inside the repo)"
+  - `C:\Users\...\evil.md` → "is an absolute path (repo-relative paths only)"
+  - repo-relative but missing file → "does not exist in the tree"
+  - positive control: `stacks/01-.../verification.md` created in a sandbox
+    copy with gate `manifest: true` → C10 PASS (legitimate in-repo evidence
+    is accepted; C11 then correctly flags stack-01 gate drift).
 
 ## 2. Schema validation — PASS (independent engine)
 
@@ -88,6 +105,17 @@ Command: `python tests/integration/validate_schemas.py` (exit code 0)
   unimportable (`sys.modules['jsonschema'] = None`) produced the same PASS
   verdict via the stdlib subset validator (`engine=stdlib fallback subset
   validator`, exit 0). Both engines agree.
+- **Crash-proofing (AO review, run b73a99e3, finding 2)**: every input file
+  (both schemas, `catalog.json`, all 40 manifests) is loaded through a
+  guarded `_load_json` helper, and both engine paths are wrapped in a
+  last-resort guard. Verified regressions:
+  - Corrupt `catalog.schema.json` (invalid JSON): previously an unhandled
+    `JSONDecodeError` traceback; now `[FAIL] S05: schemas/catalog.schema.json:
+    invalid JSON: ...` with **exit 3** on both engines. No traceback.
+  - A crash is never an accepted outcome: exit 1 means "data invalid",
+    exit 3 means "validator could not do its job" (S04 unsupported
+    construct / S05 environment failure), and both are FAIL findings in the
+    rendered report.
 - This run is independent of worker-2's tests: no code, fixtures, or helpers
   were shared; only the schema and data files themselves are inputs.
 
@@ -96,14 +124,25 @@ Command: `python tests/integration/validate_schemas.py` (exit code 0)
 Command: `python tests/integration/run_all.py --with-selfcheck` (exit 0)
 
 ```text
-M1: CAUGHT (validate_catalog.py, exit 1, codes ['C08'])   # id/directory mismatch
-M2: CAUGHT (validate_catalog.py, exit 1, codes ['C09'])   # placeholder claims backend tech
-M3: CAUGHT (validate_catalog.py, exit 1, codes ['C10'])   # gate=true, evidencePath missing
-M4: CAUGHT (validate_schemas.py, exit 1, codes ['S03'])   # missing required key + invalid enum
-M5: CAUGHT (validate_catalog.py, exit 1, codes ['C03','C04'])  # 41 stacks / duplicate id+number
-M6: CAUGHT (validate_catalog.py, exit 1, codes ['C06'])   # maturityPolicy vs schema enum drift
-M7: CAUGHT (validate_catalog.py, exit 1, codes ['C07'])   # orphan stack directory
+M1: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C08'])   # id/directory mismatch
+M2: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C09'])   # placeholder claims backend tech
+M3: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C10'])   # gate=true, evidencePath missing
+M4: CAUGHT (validate_schemas.py, exit 1, FAIL lines for ['S03'])   # missing required key + invalid enum
+M5: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C03','C04'])  # 41 stacks / duplicate id+number
+M6: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C06'])   # maturityPolicy vs schema enum drift
+M7: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C07'])   # orphan stack directory
 ```
+
+**Strict catching criterion (AO review, run b73a99e3, finding 1):** a
+mutation counts as CAUGHT only when (a) the validator exited with a
+documented code (0/1/2/3) and (b) the expected finding code appeared on a
+literal `[FAIL] <CODE>:` line — a bare code mention inside a PASS line or
+summary no longer counts. A validator that crashes (exit code outside the
+documented set, or a traceback) is classified `NOT CAUGHT (crash)`; one that
+runs but misses the finding is `NOT CAUGHT (missed)`. Both fail the
+self-check. Verified with a stub validator exiting 70: all six catalog
+mutations were classified `NOT CAUGHT (crash)` and the self-check returned
+RESULT: FAIL — a crash can no longer masquerade as a catch.
 
 This proves the validators detect defects rather than always printing PASS.
 
@@ -236,6 +275,20 @@ across catalog, manifests, and docs.
 - PR #4: **BLOCKED** — must fix the ubuntu CI test failures before merge.
 - CI hardening actions (SHA pinning, gitleaks version pin): recommended, not
   blocking.
+
+## 9. Review follow-up (AO review run b73a99e3 — changes requested → addressed)
+
+All three review findings were fixed in this branch and re-verified:
+
+| # | Finding | Fix | Re-verification |
+|---|---|---|---|
+| 1 | selfcheck counted any non-zero exit as "caught"; code match could hit PASS lines | Strict criterion: CAUGHT requires documented exit code **and** the expected code on a literal `[FAIL] <CODE>:` line; new categories `NOT CAUGHT (crash)` (exit outside 0/1/2/3 or traceback) and `NOT CAUGHT (missed)`; both fail the check | Stub validator exiting 70 → 6× `NOT CAUGHT (crash)`, self-check RESULT: FAIL; real validators → 7× CAUGHT, RESULT: PASS |
+| 2 | fallback engine could crash (e.g. corrupt schema file → traceback) | All inputs loaded via guarded `_load_json`; both engines wrapped in a last-resort guard; corrupt/missing schema or data → `[FAIL] S05` finding, exit 3 (meaningful), never a traceback | Corrupt `catalog.schema.json`: `[FAIL] S05: ... invalid JSON` exit 3 on **both** engines; healthy tree unchanged (both engines PASS, exit 0) |
+| 3 | `evidencePath` not confined to the repo root | `_evidence_outside_root()` rejects absolute paths, non-strings, and any path resolving outside the repo root before existence is checked | `..\..\evil\evidence.md` and `C:\...\evil.md` → `[FAIL] C10` exit 1; in-repo missing file → `[FAIL] C10`; in-repo existing file (positive control) → C10 PASS |
+
+Post-fix full harness run: `python tests/integration/run_all.py --with-selfcheck`
+→ validate_catalog 20/20 PASS, validate_schemas 4/4 PASS, selfcheck M1–M7 all
+CAUGHT, OVERALL: PASS (exit 0).
 
 ---
 

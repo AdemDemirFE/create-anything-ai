@@ -4,8 +4,20 @@
 A validator that always prints PASS is worthless. This script copies the real
 stacks/ and schemas/ trees into a temporary directory, injects one defect at a
 time, runs the relevant validator against the copy, and asserts that the
-defect is detected (non-zero exit plus the expected finding code in the
-output). The real repository is never modified.
+defect is detected. The real repository is never modified.
+
+Strict "caught" criterion (review finding 1): a mutation counts as CAUGHT
+only when BOTH hold:
+  * the validator exited non-zero, AND
+  * the output contains `[FAIL] <EXPECTED_CODE>:` — i.e. the expected finding
+    code appears on an actual FAIL line, not anywhere in the text (a bare
+    code mention inside a PASS line or a summary no longer counts).
+Anything else is NOT caught, split into two distinct categories:
+  * NOT CAUGHT (crash): the validator exited with a non-standard code
+    (anything outside the script's documented exit codes 0/1/2/3) or produced
+    a traceback — the validator itself malfunctioned.
+  * NOT CAUGHT (missed): the validator ran normally (exit 0/1/2/3) but failed
+    to report the expected finding code on a FAIL line.
 
 Mutation matrix (id -> defect -> expected detector):
   M1  manifest id != directory name                  -> validate_catalog  C08
@@ -20,7 +32,7 @@ Usage:
     python tests/integration/selfcheck_mutations.py [--root REPO_ROOT]
 
 Exit codes: 0 = every mutation was caught, 1 = at least one mutation was
-missed (validator bug!), 2 = usage/environment error.
+missed or crashed (validator bug!), 2 = usage/environment error.
 """
 
 from __future__ import annotations
@@ -34,6 +46,9 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+# Documented exit codes of the validators (see their docstrings / README).
+KNOWN_EXIT_CODES = {0, 1, 2, 3}
 
 
 def prepare_copy(source_root: Path, workdir: Path) -> Path:
@@ -51,17 +66,34 @@ def run_validator(script: str, root: Path) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
+def _expected_fail_lines_present(output: str, codes: list[str]) -> list[str]:
+    """Return the expected codes missing as literal '[FAIL] <code>:' lines."""
+    missing = []
+    for code in codes:
+        if f"[FAIL] {code}:" not in output:
+            missing.append(code)
+    return missing
+
+
 def expect_caught(results: list[tuple[str, int, str]], mutation: str,
                   script: str, codes: list[str]) -> str:
     for name, code, output in results:
         if name == script:
-            caught = code != 0 and all(c in output for c in codes)
-            if caught:
-                return f"CAUGHT ({script}, exit {code}, codes {codes})"
-            missing = [c for c in codes if c not in output]
-            return (f"MISSED! {script} exit={code}, missing codes {missing}; "
+            if code not in KNOWN_EXIT_CODES or "Traceback (most recent call last)" in output:
+                tail = output[-400:] if output else "<no output>"
+                return (f"NOT CAUGHT (crash): {script} exited with {code} "
+                        f"(expected one of {sorted(KNOWN_EXIT_CODES)}); "
+                        f"output tail: ...{tail}")
+            missing = _expected_fail_lines_present(output, codes)
+            if not missing:
+                return f"CAUGHT ({script}, exit {code}, FAIL lines for {codes})"
+            if code == 0:
+                return (f"NOT CAUGHT (missed): {script} exited 0; expected FAIL lines "
+                        f"for {missing} never appeared")
+            return (f"NOT CAUGHT (missed): {script} exited {code} for the wrong reason; "
+                    f"expected FAIL lines for {missing} never appeared; "
                     f"output tail: ...{output[-300:]}")
-    return f"MISSED! script {script} never ran"
+    return f"NOT CAUGHT (missed): script {script} never ran"
 
 
 def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
@@ -75,21 +107,23 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
         mutate(data)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    def record(mutation: str, script: str, codes: list[str],
+               root: Path, out: tuple[int, str]) -> None:
+        results.append((mutation, out[0],
+                        expect_caught([(script,) + out], mutation, script, codes)))
+        shutil.rmtree(root.parent, ignore_errors=True)
+
     # M1: id/directory mismatch
     root = fresh()
     p = root / "stacks" / "02-java25-springboot-angular-ionic" / "stack.json"
     edit_json(p, lambda m: m.__setitem__("id", "02-wrong-id"))
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M1", out[0], expect_caught([("validate_catalog.py",) + out], "M1", "validate_catalog.py", ["C08"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M1", "validate_catalog.py", ["C08"], root, run_validator("validate_catalog.py", root))
 
     # M2: placeholder claims a technology
     root = fresh()
     p = root / "stacks" / "05-nestjs-typeorm-nextjs-reactnative" / "stack.json"
     edit_json(p, lambda m: m.__setitem__("backend", {"language": "TypeScript", "framework": "NestJS"}))
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M2", out[0], expect_caught([("validate_catalog.py",) + out], "M2", "validate_catalog.py", ["C09"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M2", "validate_catalog.py", ["C09"], root, run_validator("validate_catalog.py", root))
 
     # M3: gate=true with nonexistent evidencePath
     root = fresh()
@@ -98,9 +132,7 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
         manifest["verification"]["manifest"] = True
         manifest["verification"]["evidencePath"] = "stacks/03-dotnet9-blazor-react-maui/verification.md"
     edit_json(p, m3)
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M3", out[0], expect_caught([("validate_catalog.py",) + out], "M3", "validate_catalog.py", ["C10"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M3", "validate_catalog.py", ["C10"], root, run_validator("validate_catalog.py", root))
 
     # M4: schema-level - missing required key + invalid enum value
     root = fresh()
@@ -109,34 +141,26 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
         del manifest["requires"]
         manifest["maturity"] = "production-ready"
     edit_json(p, m4)
-    out = run_validator("validate_schemas.py", root)
-    results.append(("M4", out[0], expect_caught([("validate_schemas.py",) + out], "M4", "validate_schemas.py", ["S03"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M4", "validate_schemas.py", ["S03"], root, run_validator("validate_schemas.py", root))
 
     # M5: duplicate catalog entry (41 stacks, duplicate id/number)
     root = fresh()
     p = root / "stacks" / "catalog.json"
     edit_json(p, lambda c: c["stacks"].append(dict(c["stacks"][0])))
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M5", out[0], expect_caught([("validate_catalog.py",) + out], "M5", "validate_catalog.py", ["C03", "C04"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M5", "validate_catalog.py", ["C03", "C04"], root, run_validator("validate_catalog.py", root))
 
     # M6: maturityPolicy drifts from the schema enum
     root = fresh()
     p = root / "stacks" / "catalog.json"
     edit_json(p, lambda c: c["maturityPolicy"].remove("blocked"))
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M6", out[0], expect_caught([("validate_catalog.py",) + out], "M6", "validate_catalog.py", ["C06"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M6", "validate_catalog.py", ["C06"], root, run_validator("validate_catalog.py", root))
 
     # M7: orphan stack directory outside the catalog
     root = fresh()
     rogue = root / "stacks" / "41-rogue-stack"
     rogue.mkdir()
     (rogue / "stack.json").write_text("{}\n", encoding="utf-8")
-    out = run_validator("validate_catalog.py", root)
-    results.append(("M7", out[0], expect_caught([("validate_catalog.py",) + out], "M7", "validate_catalog.py", ["C07"])))
-    shutil.rmtree(root.parent, ignore_errors=True)
+    record("M7", "validate_catalog.py", ["C07"], root, run_validator("validate_catalog.py", root))
 
     return results
 
@@ -159,10 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     failed = False
     for name, _code, verdict in results:
         print(f"{name}: {verdict}")
-        if verdict.startswith("MISSED"):
+        if verdict.startswith("NOT CAUGHT"):
             failed = True
     print("-" * 72)
-    print("RESULT: PASS (all mutations caught)" if not failed else "RESULT: FAIL (validator missed a defect)")
+    print("RESULT: PASS (all mutations caught)" if not failed
+          else "RESULT: FAIL (validator missed a defect or crashed)")
     return 1 if failed else 0
 
 

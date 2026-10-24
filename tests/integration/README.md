@@ -11,9 +11,9 @@ scripts re-implement the rule from the contract instead of importing it.
 
 | Script | Purpose |
 |---|---|
-| `validate_catalog.py` | Catalog integrity (C01–C11): exactly 40 stacks, unique ids/numbers, contiguous 1–40, id/directory agreement, policy membership **and policy↔schema-enum agreement**, placeholder discipline (02–40), verification-evidence reality, stack-01 gate reality. |
-| `validate_schemas.py` | Full JSON Schema validation of `stacks/catalog.json` and all 40 `stack.json` manifests via the third-party `jsonschema` package (draft 2020-12), with an offline stdlib fallback engine. |
-| `selfcheck_mutations.py` | Mutation testing: injects 7 defects (M1–M7) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught. Proves the validators detect defects rather than always printing PASS. |
+| `validate_catalog.py` | Catalog integrity (C01–C11): exactly 40 stacks, unique ids/numbers, contiguous 1–40, id/directory agreement, policy membership **and policy↔schema-enum agreement**, placeholder discipline (02–40), verification-evidence reality **with repo-root confinement** (absolute paths and `..` traversal rejected), stack-01 gate reality. |
+| `validate_schemas.py` | Full JSON Schema validation of `stacks/catalog.json` and all 40 `stack.json` manifests via the third-party `jsonschema` package (draft 2020-12), with an offline stdlib fallback engine. Never crashes on bad input: malformed/missing files become `S05` FAIL findings (exit 3), not tracebacks. |
+| `selfcheck_mutations.py` | Mutation testing: injects 7 defects (M1–M7) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught with a strict criterion (non-zero exit **and** the expected code on a literal `[FAIL] <CODE>:` line). Crashing validators are reported separately as `NOT CAUGHT (crash)` and also fail the check. Proves the validators detect defects rather than always printing PASS. |
 | `run_all.py` | Runs the two validators in sequence; `--with-selfcheck` also runs the mutation self-check. |
 
 ## How to run
@@ -43,7 +43,7 @@ default is the repository root two levels above `tests/integration/`.
 | 0 | All checks passed |
 | 1 | One or more checks failed (see `[FAIL]` lines) |
 | 2 | Usage/environment error (wrong `--root`, missing files) |
-| 3 | `validate_schemas.py` only: schema uses constructs the fallback engine does not support (only when `jsonschema` is absent) |
+| 3 | `validate_schemas.py` only: the validator could not do its job — fallback engine hit an unsupported schema construct (S04) or the validator failed to run to completion (S05, e.g. corrupt schema file). Data-invalid failures use exit 1; "validator itself could not run" uses exit 3. A crash (unhandled traceback) is never an accepted outcome: both engines load every input through `_load_json` and a last-resort guard converts any unexpected exception into an `S05` FAIL finding. |
 
 ## Expected output (healthy tree)
 
@@ -65,11 +65,25 @@ RESULT: PASS
 `selfcheck_mutations.py` prints M1–M7 and ends with:
 
 ```text
-M1: CAUGHT (validate_catalog.py, exit 1, codes ['C08'])
+M1: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C08'])
 ...
-M7: CAUGHT (validate_catalog.py, exit 1, codes ['C07'])
+M7: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C07'])
 RESULT: PASS (all mutations caught)
 ```
+
+A mutation counts as **CAUGHT** only when the validator exited with a
+documented code **and** the expected code appeared on a literal
+`[FAIL] <CODE>:` line (a code mention inside a PASS line does not count).
+Two distinct failure categories exist:
+
+```text
+M?: NOT CAUGHT (crash): validate_catalog.py exited with 70 (expected one of [0, 1, 2, 3])
+M?: NOT CAUGHT (missed): validate_catalog.py exited 0; expected FAIL lines for ['C08'] never appeared
+```
+
+`crash` = the validator itself malfunctioned (exit code outside the
+documented set, or a traceback in the output); `missed` = the validator ran
+but did not report the expected finding. Both make the self-check FAIL.
 
 Any `[FAIL]` line is actionable: it names the stack, the violated rule, and
 the observed vs. expected values.

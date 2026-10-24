@@ -28,7 +28,9 @@ Checks performed
        verification gates all false, lastVerifiedAt/evidencePath null
   C10  verification reality: any gate that is true must have a non-null
        lastVerifiedAt, a non-null evidencePath, and the evidence file must
-       exist in the tree (applies to all stacks, incl. stack 01)
+       exist in the tree AND resolve inside the repository root (absolute
+       paths and ".." traversal are rejected E_UNSAFE-style; applies to all
+       stacks, incl. stack 01)
   C11  stack 01 gates reflect reality: all four gates false with no
        recorded evidence (nothing has been verified yet on main)
 
@@ -114,6 +116,29 @@ def derived_display_name(stack_id: str) -> str:
     """Name a placeholder would get if it were derived from its id."""
     rest = stack_id.split("-", 1)[1]
     return " / ".join(part.capitalize() for part in rest.split("-"))
+
+
+def _evidence_outside_root(evidence, root: Path) -> str | None:
+    """Return a rejection reason if evidencePath escapes the repo root.
+
+    Only repo-relative paths that resolve strictly inside `root` are
+    accepted. Returns None when the path is confined (existence itself is
+    checked by the caller).
+    """
+    if not isinstance(evidence, str) or not evidence.strip():
+        return "is not a non-empty string"
+    candidate = Path(evidence)
+    if candidate.is_absolute():
+        return "is an absolute path (repo-relative paths only)"
+    try:
+        resolved = (root / candidate).resolve()
+        root_resolved = root.resolve()
+    except OSError as exc:  # pragma: no cover - defensive
+        return f"cannot be resolved: {exc}"
+    if resolved != root_resolved and root_resolved not in resolved.parents:
+        return ("escapes the repository root (traversal rejected; "
+                "evidence must live inside the repo)")
+    return None
 
 
 def validate(root: Path) -> Findings:
@@ -250,8 +275,17 @@ def validate(root: Path) -> Findings:
                     evidence_failures.append(f"{sid}: a gate is true but lastVerifiedAt is null")
                 if evidence is None:
                     evidence_failures.append(f"{sid}: a gate is true but evidencePath is null")
-                elif not (root / evidence).exists():
-                    evidence_failures.append(f"{sid}: evidencePath {evidence!r} does not exist in the tree")
+                else:
+                    # Confinement: evidencePath must be a repo-relative path
+                    # that resolves inside the repository root. Absolute
+                    # paths, Windows drive/UNC forms, and any ".." traversal
+                    # that escapes the root are rejected before existence is
+                    # even checked.
+                    evidence_reason = _evidence_outside_root(evidence, root)
+                    if evidence_reason is not None:
+                        evidence_failures.append(f"{sid}: evidencePath {evidence!r} {evidence_reason}")
+                    elif not (root / evidence).exists():
+                        evidence_failures.append(f"{sid}: evidencePath {evidence!r} does not exist in the tree")
 
         number = entry.get("number")
         if isinstance(number, int) and number >= PLACEHOLDER_MIN_NUMBER:
