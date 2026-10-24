@@ -1,0 +1,34 @@
+# Stack 04 local services.
+#
+# STATUS: DECLARATIVE / UNVERIFIED - the Docker daemon was not available for
+# a real `docker compose up --build` in the implementation environment, so
+# this file has never been executed. The first real run IS its verification.
+#
+# Design notes:
+# - The backend alone is serviceable for local dev: `go run ./cmd/backend`
+#   needs NO database (in-memory store, documented decision in
+#   internal/store/store.go). This compose file exists for containerized
+#   deployment of that single service.
+# - Only the backend port is published. There is no database service in this
+#   stack's reference scope; when a real store (e.g. PostgreSQL) is added,
+#   keep it unpublished inside the compose network (QUALITY_GATES Gate C).
+# - No credentials are committed; nothing here needs secrets.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # Behind TLS, set COOKIE_SECURE=true so the session cookie gains the
+      # Secure flag. TRUSTED_PROXIES stays empty unless a reverse proxy is
+      # actually in front (XFF is ignored otherwise - see ARCHITECTURE.md).
+      PORT: "8080"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    # No healthcheck is declared: the reference image is scratch/distroless
+    # without a shell or wget. Add one only together with a real image change
+    # and a verified run.

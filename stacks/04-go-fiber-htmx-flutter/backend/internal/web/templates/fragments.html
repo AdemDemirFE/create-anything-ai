@@ -1,0 +1,44 @@
+{{define "login-form"}}<form id="login-form" method="post" action="/login"
+      hx-post="/login" hx-target="#login-form" hx-swap="outerHTML">
+  {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="email" required value="{{.Email}}">
+  {{with .FieldErrors}}<p class="field-error">{{index . "email"}}</p>{{end}}
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+  {{with .FieldErrors}}<p class="field-error">{{index . "password"}}</p>{{end}}
+
+  <button type="submit">Log in</button>
+</form>
+{{end}}
+
+{{define "register-form"}}<form id="register-form" method="post" action="/register"
+      hx-post="/register" hx-target="#register-form" hx-swap="outerHTML">
+  {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="email" required value="{{.Email}}">
+  {{with .FieldErrors}}<p class="field-error">{{index . "email"}}</p>{{end}}
+
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10">
+  <p class="muted">At least 10 characters, with letters and digits. The server re-validates.</p>
+  {{with .FieldErrors}}<p class="field-error">{{index . "password"}}</p>{{end}}
+
+  <button type="submit">Create account</button>
+</form>
+{{end}}
+
+{{define "run-result"}}
+{{if .Result}}
+<h2>Result</h2>
+<pre class="output">{{.Result.Output}}</pre>
+<p class="complexity"><strong>Measured duration:</strong> {{fmtMs .Result.ExecutionMS}} ms
+   <span class="muted">(server-side monotonic clock; small inputs do not prove complexity)</span></p>
+<p class="complexity"><strong>Theoretical complexity:</strong> {{.Result.Complexity}} — {{.Result.Explanation}}</p>
+{{else if .Error}}
+<div class="error" role="alert">{{.Error}}</div>
+{{else}}
+<p class="muted">Run an algorithm to see output, measured duration, and theoretical complexity side by side.</p>
+{{end}}
+{{end}}
