@@ -29,13 +29,15 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.2'
 mvn test
 ```
 
-Result: **BUILD SUCCESS, EXIT 0** — `Total time: 27.908 s`.
+Result: **BUILD SUCCESS, EXIT 0** — 22 tests (last full run after the review
+fix for prod cookie hardening property paths).
 
 ```text
 [INFO] Tests run: 7,  Failures: 0, Errors: 0, Skipped: 0 -- AlgorithmEngineTest
 [INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- EnvelopeContractTest
-[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 2,  Failures: 0, Errors: 0, Skipped: 0 -- ProdCookieConfigTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -70,6 +72,13 @@ Issues found and fixed during real runs (all resolved, suite green):
    HttpSessionSecurityContextRepository; authentication manager exposed as a
    bean; `/api/v1/algorithm/**` matcher fixed (`/run` was falling through to
    `denyAll()` → 403).
+5. Review fix: prod cookie hardening was a silent no-op — `secure: true` was
+   nested under the non-existent `spring.server.*` namespace instead of
+   `server.servlet.session.cookie.secure` (verified against Boot 4.1.2
+   configuration metadata in `spring-boot-web-server`); same for
+   `server.max-http-request-header-size`. Both moved to the correct
+   namespaces; `ProdCookieConfigTest` (2 tests) now asserts the YAML structure
+   and fails if the nesting regresses (mutation-checked).
 
 ## 3. Web — `npm test` + build (REAL, PASSED)
 

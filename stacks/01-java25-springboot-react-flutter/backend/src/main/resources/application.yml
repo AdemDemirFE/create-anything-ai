@@ -11,11 +11,11 @@ spring:
       max-file-size: 256KB
   jackson:
     default-property-inclusion: always
-  server:
-    max-http-request-header-size: 8KB
 
 server:
   port: 8080
+  # Max request header size (8KB Tomcat default is fine; pinned here for clarity)
+  max-http-request-header-size: 8KB
   servlet:
     session:
       cookie:
@@ -95,7 +95,12 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-  server:
+
+# Prod cookie hardening: session cookie only over TLS. This must live under
+# server.servlet.session.cookie (NOT spring.server.* - that namespace does
+# not exist); a spring-embedded copy here was a silent no-op.
+server:
+  servlet:
     session:
       cookie:
         secure: true
