@@ -1,0 +1,115 @@
+# ---------------------------------------------------------------------------
+# Reference Stack 01 backend defaults (profile-specific values below).
+# Secrets are never committed: compose/.env injects real values locally.
+# ---------------------------------------------------------------------------
+spring:
+  application:
+    name: stack01-backend
+  servlet:
+    multipart:
+      max-request-size: 256KB
+      max-file-size: 256KB
+  jackson:
+    default-property-inclusion: always
+
+server:
+  port: 8080
+  # Max request header size (8KB Tomcat default is fine; pinned here for clarity)
+  max-http-request-header-size: 8KB
+  servlet:
+    session:
+      cookie:
+        name: STACK01_SESSION
+        http-only: true
+        same-site: lax
+        secure: false   # set true behind TLS (production profile)
+      timeout: 30m      # documented session lifetime (ARCHITECTURE.md)
+
+app:
+  demo:
+    enabled: false      # dev-only demo mode; must stay false in production
+  cors:
+    # Comma-separated allowlist; override via the ALLOWED_ORIGINS env var
+    # (documented in .env.example). Bound into SecurityConfig.
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173
+  trusted-proxies: ""  # XFF is IGNORED unless set (see AuthService / ARCHITECTURE.md)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+---
+# Development profile: H2 in-memory + Flyway-managed schema, H2 console on.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:h2:mem:stack01;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+---
+# Test profile: isolated H2 database per test context.
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:h2:mem:stack01_test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+---
+# Production profile: PostgreSQL via environment; requires a real secret.
+# Startup fails fast if SPRING_DATASOURCE_PASSWORD is missing.
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+# Prod cookie hardening: session cookie only over TLS. This must live under
+# server.servlet.session.cookie (NOT spring.server.* - that namespace does
+# not exist); a spring-embedded copy here was a silent no-op.
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+app:
+  demo:
+    enabled: false

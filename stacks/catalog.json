@@ -25,7 +25,7 @@
       "id": "01-java25-springboot-react-flutter",
       "number": 1,
       "category": "enterprise-cross-platform",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "02-java25-springboot-angular-ionic",
