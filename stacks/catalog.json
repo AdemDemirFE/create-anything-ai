@@ -43,7 +43,7 @@
       "id": "04-go-fiber-htmx-flutter",
       "number": 4,
       "category": "enterprise-cross-platform",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "05-nestjs-typeorm-nextjs-reactnative",
@@ -229,7 +229,7 @@
       "id": "35-dotnet9-signalr-react-redis",
       "number": 35,
       "category": "realtime",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "36-go-gorilla-websockets-vue3",

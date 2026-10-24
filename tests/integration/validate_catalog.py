@@ -33,23 +33,21 @@ Checks performed
        exist in the tree AND resolve inside the repository root (absolute
        paths and ".." traversal are rejected E_UNSAFE-style; applies to all
        stacks, incl. stack 01)
-  C11  promotion reality for every non-proposed stack: a 'proposed' stack
-        must have all gates false with no recorded evidence; any stack
-        whose maturity is above 'proposed' (stack 01 or a promoted 02-40)
-        must claim at least one true gate whose evidencePath resolves to
-        an existing in-repo file (C10 enforces the details); stack 01
-        presence is checked separately
-  C12  maturity-vs-content consistency (review finding on PR #9): every
-       stack whose manifest still looks like an unverified placeholder
-       (requires contains "to-be-determined", or every verification gate is
-       still false) must keep maturity "proposed". A maturity above
-       "proposed" (scaffolded/verified/...) on placeholder-shaped content
-       is an overstatement and FAILs, per docs/QUALITY_GATES.md (build and
-       unit tests are "Required" from scaffolded up; a placeholder cannot
-       have run them). A promoted stack with at least one true gate and
-       real requirements is not placeholder-shaped; C10 separately verifies
-       that every true gate has existing in-repo evidence (e.g. PR #7's
-       stack-01), and C11 covers stack-01's maturity-vs-gates consistency.
+  C11  promotion reality, aligned with the QUALITY_GATES ladder (review
+       round 3): proposed/spec-ready/blocked carry no gate claims
+       (spec-ready is documentation-ready with build/unit "Planned";
+       blocked is a conscious stop); scaffolded and above must claim at
+       least one true gate whose evidencePath resolves to an existing
+       in-repo file (C10 enforces the details); stack 01 presence is
+       checked separately
+  C12  maturity-vs-content consistency (review finding on PR #9): the
+       placeholder marker — `requires` containing "to-be-determined" —
+       means requirements have not been decided, so such a manifest may
+       only be "proposed" (idea) or "blocked" (conscious stop); any other
+       maturity on it FAILs. spec-ready stacks have decided requirements
+       and may legitimately keep all gates false (build/unit are
+       "Planned" at that rung); the gate ladder for scaffolded+ is C11,
+       and C10 verifies every true gate's evidence exists in-repo.
 
 Usage:
     python tests/integration/validate_catalog.py [--root REPO_ROOT]
@@ -365,32 +363,23 @@ def validate(root: Path) -> Findings:
                                                     f"id-derived default {derived_display_name(str(sid))!r}")
 
         # --- C12: maturity-vs-content consistency (review finding) ----------
-        # A maturity above "proposed" is a claim that real work happened
-        # (docs/QUALITY_GATES.md: build/unit tests are Required from
-        # scaffolded up). Content that still looks like an unverified
-        # placeholder contradicts that claim, so flag it regardless of
-        # which stack it is. Placeholder-shaped means: the manifest still
-        # carries the "to-be-determined" requirement marker, or ALL
-        # verification gates are still false (no work has been verified at
-        # all). A promoted stack with at least one true gate and real
-        # requirements (e.g. PR #7's stack-01: scaffolded, manifest/unit/
-        # integration true, e2e legitimately false at this rung) is not
-        # placeholder-shaped; the truthfulness of its true gates is C10's
-        # job (evidence must exist in-repo). Gates that are merely false at
-        # a higher maturity rung are legitimate (QUALITY_GATES marks several
-        # gates "Planned"/"No" below verified) and are handled by C10/C11.
-        if isinstance(verification, dict):
-            gate_values = [verification.get(k) for k in ("manifest", "unit", "integration", "e2e")]
-            placeholder_shaped = (
-                "to-be-determined" in (manifest.get("requires") or [])
-                or all(v is False for v in gate_values)
-            )
-            if placeholder_shaped and manifest.get("maturity") != "proposed":
-                maturity_mismatches.append(
-                    f"{sid}: maturity {manifest.get('maturity')!r} claims work beyond 'proposed' "
-                    "but content is still placeholder-shaped (requires contains "
-                    "'to-be-determined' or every verification gate is still false); "
-                    "promote only with real content and C10-verifiable evidence")
+        # Aligned with the QUALITY_GATES ladder (review round 3): the only
+        # maturity-independent overstatement signal is the placeholder
+        # requirement marker — a manifest whose `requires` still contains
+        # "to-be-determined" has decided nothing yet, so it may only be
+        # "proposed" or "blocked" (a conscious stop). spec-ready stacks have
+        # decided their requirements (the marker is gone) and may legitimately
+        # keep all gates false (build/unit are "Planned" at that rung), so
+        # the former all-gates-false arm of this check moved to C11, which
+        # enforces the gate ladder for scaffolded and above.
+        if isinstance(verification, dict) \
+                and "to-be-determined" in (manifest.get("requires") or []) \
+                and manifest.get("maturity") not in ("proposed", "blocked"):
+            maturity_mismatches.append(
+                f"{sid}: maturity {manifest.get('maturity')!r} claims decisions beyond "
+                "'proposed' but requires still contains 'to-be-determined'; a stack that "
+                "has not decided its requirements may only be 'proposed' (idea) or "
+                "'blocked' (conscious stop)")
 
     findings.check("C08", not identity_failures,
                    "; ".join(identity_failures) if identity_failures
@@ -404,16 +393,24 @@ def validate(root: Path) -> Findings:
     findings.check(
         "C12", not maturity_mismatches,
         "; ".join(maturity_mismatches) if maturity_mismatches
-        else "manifest maturity matches content shape (no placeholder-shaped manifest above 'proposed')")
+        else "manifest maturity matches content shape ('to-be-determined' only in "
+             "proposed/blocked stacks; gate ladder enforced by C11)")
 
-    # --- C11: promotion reality for every non-proposed stack -----------------
-    # Derive the expectation from maturity (AO review suggestion): a
-    # 'proposed' stack must have all gates false and zero evidence; ANY
-    # stack whose manifest maturity is above 'proposed' (stack 01 or a
-    # promoted 02-40) must claim at least one true gate backed by existing
-    # in-repo evidence. Without this, a stack 02-40 promoted in BOTH the
-    # manifest and the catalog (so C08 agrees) could carry invented
-    # backend/web keys with all gates false and nothing would fail.
+    # --- C11: promotion reality, aligned with the QUALITY_GATES ladder ------
+    # The maturity matrix (docs/QUALITY_GATES.md) defines which maturities
+    # legitimately carry no verified work:
+    #   * proposed      — idea on paper: all gates false, no evidence (C09/C10
+    #                     keep the details honest)
+    #   * spec-ready    — documentation ready, implementation not started:
+    #                     build/unit are "Planned", so gates may be all false
+    #                     and there is nothing to point evidencePath at yet
+    #   * blocked       — consciously stopped: no new work, gates stay false
+    #   * scaffolded    — generator mapping + tests are "Required": at least
+    #                     one true gate, backed by existing in-repo evidence
+    #   * verified, production-reference — same, with full evidence
+    # So the gate+evidence requirement applies ONLY to scaffolded and above.
+    # Without this alignment, a legitimate spec-ready or blocked stack would
+    # be unfairly failed (review round 3).
     promoted_failures: list[str] = []
     for sid in ids:
         sdir = stacks_dir / str(sid)
@@ -421,20 +418,20 @@ def validate(root: Path) -> Findings:
         if manifest is None:
             continue
         maturity = manifest.get("maturity")
+        if maturity not in ("scaffolded", "verified", "production-reference"):
+            continue
         verification = manifest.get("verification")
         gates = {k: verification.get(k) for k in ("manifest", "unit", "integration", "e2e")} \
             if isinstance(verification, dict) else {}
-        if maturity == "proposed":
-            continue
-        # stack-01-specific presentation on top of the generic rule
         is_stack01 = str(sid) == "01-java25-springboot-react-flutter"
         label = "stack 01" if is_stack01 else str(sid)
         any_true = any(v is True for v in gates.values())
         if not any_true:
             promoted_failures.append(
                 f"{label}: maturity {maturity!r} but every verification gate is false "
-                f"(gates {gates}); a promoted stack must claim at least one true gate "
-                "whose evidence C10 verifies in-repo")
+                f"(gates {gates}); the QUALITY_GATES matrix requires at least one true "
+                "gate (generator mapping / build+unit) at this rung, whose evidence "
+                "C10 verifies in-repo")
             continue
         # the claimed evidence must actually resolve (reuse the C10 rule:
         # repo-root-relative, else stack-dir-relative, both confined)
@@ -457,8 +454,8 @@ def validate(root: Path) -> Findings:
     else:
         findings.check(
             "C11", True,
-            "every non-proposed stack claims at least one true gate with in-repo evidence "
-            "(stack 01 is present in the catalog)")
+            "scaffolded+ stacks claim true gates with in-repo evidence; "
+            "proposed/spec-ready/blocked carry no gate claims (QUALITY_GATES ladder)")
 
     # stack-01 presence stays its own finding for continuity with Part A
     stack01 = by_id.get("01-java25-springboot-react-flutter", {})

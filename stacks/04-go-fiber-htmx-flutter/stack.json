@@ -2,17 +2,48 @@
   "id": "04-go-fiber-htmx-flutter",
   "name": "Go / Fiber / Htmx / Flutter",
   "category": "enterprise-cross-platform",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 04. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Multi-client application stack: Go 1.27 + Fiber v3 backend with server-rendered htmx web client implemented and tested (unit+integration); Flutter mobile written against the frozen contract but unverified (no SDK); compose declared but not built (see verification.md).",
+  "backend": {
+    "language": "Go",
+    "framework": "Fiber",
+    "version": "3.6.1"
+  },
+  "web": {
+    "framework": "htmx + html/template",
+    "buildTool": "go:embed (no build step)",
+    "version": "2.0.4"
+  },
+  "mobile": {
+    "framework": "Flutter"
+  },
+  "data": [
+    "In-memory store"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "ios",
+    "android"
+  ],
+  "requires": [
+    "Go",
+    "Flutter SDK"
+  ],
+  "versions": {
+    "go": "1.27.0",
+    "fiber": "3.6.1",
+    "htmx": "2.0.4",
+    "x-crypto": "0.58.0",
+    "testify": "1.12.1"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-24T20:15:00Z",
+    "evidencePath": "verification.md"
   }
 }

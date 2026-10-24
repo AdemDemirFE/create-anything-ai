@@ -1,0 +1,7 @@
+# Stack 04
+.env
+# Go
+backend/backend
+backend/vendor/
+*.test
+*.out
