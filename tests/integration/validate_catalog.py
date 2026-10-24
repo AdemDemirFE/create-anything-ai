@@ -31,8 +31,20 @@ Checks performed
        exist in the tree AND resolve inside the repository root (absolute
        paths and ".." traversal are rejected E_UNSAFE-style; applies to all
        stacks, incl. stack 01)
-  C11  stack 01 gates reflect reality: all four gates false with no
-       recorded evidence (nothing has been verified yet on main)
+  C11  stack 01 maturity consistency: a 'proposed' stack-01 must have all
+       gates false and no recorded evidence; a promoted stack-01 must claim
+       at least one gate, with C10 checking the recorded evidence exists
+  C12  maturity-vs-content consistency (review finding on PR #9): every
+       stack whose manifest still looks like an unverified placeholder
+       (requires contains "to-be-determined", or every verification gate is
+       still false) must keep maturity "proposed". A maturity above
+       "proposed" (scaffolded/verified/...) on placeholder-shaped content
+       is an overstatement and FAILs, per docs/QUALITY_GATES.md (build and
+       unit tests are "Required" from scaffolded up; a placeholder cannot
+       have run them). A promoted stack with at least one true gate and
+       real requirements is not placeholder-shaped; C10 separately verifies
+       that every true gate has existing in-repo evidence (e.g. PR #7's
+       stack-01), and C11 covers stack-01's maturity-vs-gates consistency.
 
 Usage:
     python tests/integration/validate_catalog.py [--root REPO_ROOT]
@@ -244,10 +256,11 @@ def validate(root: Path) -> Findings:
                    f"orphan stack directories not in catalog: {orphans}" if orphans
                    else "no orphan stack directories outside the catalog")
 
-    # --- C08/C09/C10/C11: per-manifest checks -------------------------------
+    # --- C08/C09/C10/C11/C12: per-manifest checks ---------------------------
     placeholders_bad: list[str] = []
     evidence_failures: list[str] = []
     identity_failures: list[str] = []
+    maturity_mismatches: list[str] = []
     for sid in ids:
         sdir = stacks_dir / str(sid)
         manifest = load_json(sdir / "stack.json", findings, "C07")
@@ -346,6 +359,34 @@ def validate(root: Path) -> Findings:
                 findings.warn(DERIVED_NAME_WARNING, f"{sid}: name {manifest.get('name')!r} is not the "
                                                     f"id-derived default {derived_display_name(str(sid))!r}")
 
+        # --- C12: maturity-vs-content consistency (review finding) ----------
+        # A maturity above "proposed" is a claim that real work happened
+        # (docs/QUALITY_GATES.md: build/unit tests are Required from
+        # scaffolded up). Content that still looks like an unverified
+        # placeholder contradicts that claim, so flag it regardless of
+        # which stack it is. Placeholder-shaped means: the manifest still
+        # carries the "to-be-determined" requirement marker, or ALL
+        # verification gates are still false (no work has been verified at
+        # all). A promoted stack with at least one true gate and real
+        # requirements (e.g. PR #7's stack-01: scaffolded, manifest/unit/
+        # integration true, e2e legitimately false at this rung) is not
+        # placeholder-shaped; the truthfulness of its true gates is C10's
+        # job (evidence must exist in-repo). Gates that are merely false at
+        # a higher maturity rung are legitimate (QUALITY_GATES marks several
+        # gates "Planned"/"No" below verified) and are handled by C10/C11.
+        if isinstance(verification, dict):
+            gate_values = [verification.get(k) for k in ("manifest", "unit", "integration", "e2e")]
+            placeholder_shaped = (
+                "to-be-determined" in (manifest.get("requires") or [])
+                or all(v is False for v in gate_values)
+            )
+            if placeholder_shaped and manifest.get("maturity") != "proposed":
+                maturity_mismatches.append(
+                    f"{sid}: maturity {manifest.get('maturity')!r} claims work beyond 'proposed' "
+                    "but content is still placeholder-shaped (requires contains "
+                    "'to-be-determined' or every verification gate is still false); "
+                    "promote only with real content and C10-verifiable evidence")
+
     findings.check("C08", not identity_failures,
                    "; ".join(identity_failures) if identity_failures
                    else "all manifests agree with directory name and catalog category/maturity")
@@ -355,6 +396,10 @@ def validate(root: Path) -> Findings:
     findings.check("C10", not evidence_failures,
                    "; ".join(evidence_failures) if evidence_failures
                    else "verification state is consistent with recorded evidence (none claimed)")
+    findings.check(
+        "C12", not maturity_mismatches,
+        "; ".join(maturity_mismatches) if maturity_mismatches
+        else "manifest maturity matches content shape (no placeholder-shaped manifest above 'proposed')")
 
     # --- C11: stack 01 gates reflect its maturity ---------------------------
     # Derive the expectation from maturity (AO review suggestion): a

@@ -287,9 +287,19 @@ All three review findings were fixed in this branch and re-verified:
 | 2 | fallback engine could crash (e.g. corrupt schema file → traceback) | All inputs loaded via guarded `_load_json`; both engines wrapped in a last-resort guard; corrupt/missing schema or data → `[FAIL] S05` finding, exit 3 (meaningful), never a traceback | Corrupt `catalog.schema.json`: `[FAIL] S05: ... invalid JSON` exit 3 on **both** engines; healthy tree unchanged (both engines PASS, exit 0) |
 | 3 | `evidencePath` not confined to the repo root | `_evidence_outside_root()` rejects absolute paths, non-strings, and any path resolving outside the repo root before existence is checked | `..\..\evil\evidence.md` and `C:\...\evil.md` → `[FAIL] C10` exit 1; in-repo missing file → `[FAIL] C10`; in-repo existing file (positive control) → C10 PASS |
 
+## 10. Review follow-up (PR #9 review — changes requested → addressed)
+
+Both findings fixed and re-verified in this push:
+
+| # | Finding | Fix | Re-verification |
+|---|---|---|---|
+| 1 | No self-check mutations for the new protections (confinement, S05 path) | New mutations: **M9** (evidencePath `../outside/evil.md` with the outside file *planted* where the traversal lands — requires `[FAIL] C10:` whose message states "escapes the repository root"; plus a placeholder promoted without content requiring `[FAIL] C12:`) and **M10** (corrupt `catalog.schema.json` → `[FAIL] S05:`, documented exit 3, no traceback). Anti-vacuous **sensitivity probes**: the real validators run on an unmutated copy (baseline exit 0, no `[FAIL] <code>:` lines) so an always-failing do-nothing stub can never satisfy the assertions. Meta-verified: with `_evidence_outside_root` replaced by a passthrough stub, the passthrough validator PASSES C10 on the M9 fixture (the planted file resolves) → no `[FAIL] C10:` line → self-check verdict `NOT CAUGHT (missed)` → RESULT: FAIL, i.e. the regression is detected. Matrix now **M1–M10**. | `run_all.py --with-selfcheck` → M1–M7 CAUGHT, M8 PASS-WITH-WARN (+`[PASS] C12`), M9 CAUGHT (C10+C12, confinement reason), M10 CAUGHT (S05, exit 3), both sensitivity probes OK, OVERALL PASS |
+| 2 | Promoting a placeholder's maturity triggers no check | New check **C12 (maturity-vs-content)**: a manifest that is still placeholder-shaped — `requires` contains `to-be-determined`, or every verification gate is false — must keep maturity `proposed`; any higher maturity FAILs with guidance (promote only with real content and C10-verifiable evidence), per docs/QUALITY_GATES.md (build/unit tests Required from scaffolded up). A promoted stack with ≥1 true gate and real requirements is not placeholder-shaped (its e2e=false is legitimate at scaffolded per the gate matrix); C10 separately proves its true gates have in-repo evidence. No reference-stack exception needed: PR #7's stack-01 passes C12 because its promotion is backed by real code + evidence. | Negative: stack-05 promoted to `verified` with unchanged placeholder content → `[FAIL] C12` exit 1. Positive: PR #7 branch (scaffolded stack-01, manifest/unit/integration true, in-repo `verification.md`) → `[PASS] C12` (exit 0). Healthy main → 21/21 PASS incl. C12 |
+
 Post-fix full harness run: `python tests/integration/run_all.py --with-selfcheck`
-→ validate_catalog 20/20 PASS, validate_schemas 4/4 PASS, selfcheck M1–M7 all
-CAUGHT, OVERALL: PASS (exit 0).
+→ validate_catalog 21/21 PASS (now incl. C12), validate_schemas 4/4 PASS,
+selfcheck M1–M10 all caught/controlled, sensitivity probes OK, OVERALL: PASS
+(exit 0).
 
 Note: PR #6 was merged at head `c5ff07a` (4b578f9, 2026-10-24T16:43:10Z),
 **before** fix commit 75c002d landed on the branch. The fixes above were
