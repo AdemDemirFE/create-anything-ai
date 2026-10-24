@@ -1,0 +1,6 @@
+# Stack 36 backend build artifacts
+/backend
+/backend.exe
+/smoke
+/smoke.exe
+*.test

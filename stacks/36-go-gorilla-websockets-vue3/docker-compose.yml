@@ -1,0 +1,18 @@
+version: "3.9"
+
+# Stack 36 — Go gorilla/websocket backend. The store is in-memory by design
+# (no database in the reference scope), so this compose file is a single
+# service. UNVERIFIED: this file has never been built/run; the first real
+# `docker compose up --build` is its verification run (see verification.md §6).
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      # COOKIE_SECURE: "true"   # set behind TLS
+      # TRUSTED_PROXIES: ""     # comma-separated proxy IPs/prefixes
+      # WS_ORIGINS: "https://your-frontend.example.com"
+    ports:
+      - "8080:8080"

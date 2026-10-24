@@ -2,17 +2,43 @@
   "id": "36-go-gorilla-websockets-vue3",
   "name": "Go / Gorilla / Websockets / Vue3",
   "category": "realtime",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 36. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Realtime web stack: Go net/http backend with gorilla/websocket v1.5.3 and a HAND-WRITTEN hub (register/unregister/broadcast, per-client buffered send, slow-client drop policy, gorilla write deadlines, ping/pong keepalive, origin check) — the çırak-WS contrast to Stack 35's SignalR/Redis abstractions. Cookie session auth, PRD §7 envelope, bounded algorithm workbench; REST + hub verified by real Go tests and a live two-client smoke; Vue 3 + Vite SPA with a raw WebSocket live panel.",
+  "backend": {
+    "language": "Go",
+    "framework": "net/http + gorilla/websocket",
+    "version": "1.27.0 / gorilla v1.5.3"
+  },
+  "web": {
+    "framework": "Vue",
+    "buildTool": "Vite",
+    "version": "3.5"
+  },
+  "data": [],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
   ],
+  "requires": [
+    "Go 1.27+",
+    "Node.js 24 (web dev/test/build only)"
+  ],
+  "versions": {
+    "go": "1.27.0",
+    "gorilla-websocket": "1.5.3",
+    "vue": "3.5",
+    "vite": "7.3.7",
+    "vitest": "4.1.12",
+    "node": "24"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-24T23:30:00Z",
+    "evidencePath": "verification.md"
   }
 }
