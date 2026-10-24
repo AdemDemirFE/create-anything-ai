@@ -49,7 +49,8 @@ create-anything-ai <target-name> --stack <id>   # interactive/project-name form
 - Reject unknown stack IDs (`E_INVALID_STACK`, exit 1) before any filesystem access.
 - Resolve `--output` to an absolute path. Relative paths must stay inside the current working directory. Filesystem roots, the OS home directory, and the repository root are refused (`E_UNSAFE_PATH`, exit 3).
 - Reject path traversal (`..` escaping the allowed root) and refuse to create output under a symlinked path (symlink escape protection, `E_UNSAFE_PATH`).
-- Never overwrite an existing file without `--force` (idempotent re-runs skip existing files; `E_TARGET_EXISTS` is reserved for hard conflicts). Untracked files are never touched by `--force`.
+- Before every planned write (`mkdir` of a skeleton subdirectory, create or `--force` overwrite of a file), the full path from its deepest existing ancestor down to the target is re-checked with `lstat`; a symlink planted at a planned file, subdirectory, or mid-level ancestor path aborts generation with `E_UNSAFE_PATH` instead of following it. This applies to `--force` overwrites as well.
+- Never overwrite an existing file without `--force` (idempotent re-runs skip existing files; `E_TARGET_EXISTS` is reserved for hard conflicts). Untracked files are never touched by `--force`; a symlink at a planned path is refused, never overwritten through.
 - `--dry-run` must not create files, start containers, call AI providers, or install packages.
 - Do not run package installation or application scripts automatically unless the user explicitly opts in. The CLI never spawns shells or child processes and never interpolates user input into command lines.
 - Do not create a production `.env` or invent credentials; generated skeletons contain no secrets.
@@ -109,7 +110,7 @@ Reserved for planned features (not yet emitted):
 - `E_VALIDATION_FAILED`
 - `E_PERMISSION_DENIED`
 
-Each error prints `CODE: message` on stderr with a safe human-readable message and an actionable next step (e.g. "Run \"create-anything-ai list\" to see available stacks"), never secret values or stack traces by default.
+Each error prints exactly one `CODE: message` line on stderr — the prefix is added once by `formatError` in `packages/generator/lib/errors.js`, the single source of truth that the CLI entrypoint imports for both formatting and exit-code mapping (unknown or missing codes exit as `E_IO`, 74). Messages carry a safe human-readable text and an actionable next step (e.g. "Run \"create-anything-ai list\" to see available stacks"), never secret values or stack traces by default.
 
 ## 8. Known gaps (as of this revision)
 
