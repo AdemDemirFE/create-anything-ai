@@ -212,16 +212,26 @@ jobs:
   generator-tests:
     name: Generator tests
     runs-on: ubuntu-latest
-    # Root package.json is owned by another worker and may not exist yet. The
-    # whole job is skipped unless packages/generator/package.json is present.
-    if: ${{ hashFiles('packages/generator/package.json') != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
+      - name: Detect generator package
+        # The generator package is owned by another task and may not exist
+        # yet. hashFiles is only available in step-scope expressions, so the
+        # detection runs as a step and gates the setup/test steps instead.
+        id: generator
+        run: |
+          if [ -f "packages/generator/package.json" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Node.js
+        if: ${{ steps.generator.outputs.exists == 'true' }}
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -229,10 +239,12 @@ jobs:
           cache-dependency-path: 'packages/generator/package-lock.json'
 
       - name: Install dependencies
+        if: ${{ steps.generator.outputs.exists == 'true' }}
         working-directory: packages/generator
         run: npm ci
 
       - name: Run tests
+        if: ${{ steps.generator.outputs.exists == 'true' }}
         working-directory: packages/generator
         run: npm test
 
