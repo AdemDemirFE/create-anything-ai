@@ -87,54 +87,31 @@ export function assertCliOutputPolicy(outputDir, { cwd = process.cwd(), repoRoot
 
 /**
  * Verify that no currently-existing entry on the absolute path `target`
- * (from its deepest existing ancestor down to `target` itself) is a symlink
- * or junction, preventing symlink escape at generation time.
- * Non-existent segments cannot be symlinks yet and are skipped.
+ * — from the filesystem root all the way down to `target` itself — is a
+ * symlink or junction, preventing symlink escape at generation time.
+ * Every existing component is lstat'd; components that do not exist yet
+ * cannot be symlinks and are skipped.
  * Returns the resolved absolute path; throws E_UNSAFE_PATH on a symlink.
  */
 export function assertNoSymlinkAncestry(target) {
   const abs = path.resolve(target);
 
-  // Find the deepest existing ancestor (may be `abs` itself).
-  const missingSegments = [];
-  let existing = abs;
-  for (;;) {
-    if (fs.existsSync(existing)) {
-      break;
-    }
-    const parent = path.dirname(existing);
-    if (parent === existing) {
-      // Reached the filesystem root without finding anything existing.
-      return abs;
-    }
-    missingSegments.unshift(path.basename(existing));
-    existing = parent;
-  }
-
-  let stat;
-  try {
-    stat = fs.lstatSync(existing);
-  } catch {
-    return abs;
-  }
-  if (stat.isSymbolicLink()) {
-    throw errorWithCode(
-      'E_UNSAFE_PATH',
-      `Refusing to follow symlink at "${existing}" (symlink escape protection)`,
-    );
-  }
-
-  let cursor = existing;
-  for (const segment of missingSegments) {
+  // Walk every component from the filesystem root down to `abs`.
+  const relative = path.relative(path.parse(abs).root, abs);
+  const segments = relative.length === 0 ? [] : relative.split(path.sep);
+  let cursor = path.parse(abs).root;
+  for (const segment of segments) {
     cursor = path.join(cursor, segment);
-    let segmentStat;
+    let stat;
     try {
-      segmentStat = fs.lstatSync(cursor);
+      stat = fs.lstatSync(cursor);
     } catch {
-      // Segment vanished or is not accessible: stop walking.
+      // Component does not exist (yet) or is not accessible: it cannot be a
+      // symlink now, and later components beneath a missing directory cannot
+      // exist either.
       return abs;
     }
-    if (segmentStat.isSymbolicLink()) {
+    if (stat.isSymbolicLink()) {
       throw errorWithCode(
         'E_UNSAFE_PATH',
         `Refusing to follow symlink at "${cursor}" (symlink escape protection)`,

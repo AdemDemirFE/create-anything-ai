@@ -171,6 +171,34 @@ describe('assertNoSymlinkAncestry', () => {
       tmp.cleanup();
     }
   });
+
+  test('rejects a symlink ABOVE the deepest existing path (full-chain walk)', (t) => {
+    const tmp = makeTempDir();
+    try {
+      // `link` -> `real`; the deepest existing segment of the target is
+      // `real/sub`. A walk that only lstat's the deepest existing entry and
+      // the missing segments below it never inspects `link` itself.
+      const real = path.join(tmp.path, 'real');
+      const link = path.join(tmp.path, 'link');
+      fs.mkdirSync(path.join(real, 'sub'), { recursive: true });
+      let made = false;
+      try {
+        fs.symlinkSync(real, link, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+      const target = path.join(link, 'sub', 'out');
+      assert.throws(
+        () => assertNoSymlinkAncestry(target),
+        (err) => err.code === 'E_UNSAFE_PATH',
+      );
+    } finally {
+      tmp.cleanup();
+    }
+  });
 });
 
 describe('assertCliOutputPolicy', () => {
@@ -354,6 +382,37 @@ describe('generateSkeleton hardening', () => {
         (err) => err.code === 'E_UNSAFE_PATH',
       );
       assert.deepEqual(fs.readdirSync(outsideDir), []);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('refuses an output path whose ancestor above the deepest existing entry is a symlink', (t) => {
+    const tmp = makeTempDir();
+    try {
+      // --output link/sub/out where `link` is a symlink pointing elsewhere:
+      // the deepest existing entry of the target is `real/sub`, and the old
+      // deepest-existing-only walk never inspected `link`.
+      const real = path.join(tmp.path, 'real');
+      const link = path.join(tmp.path, 'link');
+      fs.mkdirSync(path.join(real, 'sub'), { recursive: true });
+      let made = false;
+      try {
+        fs.symlinkSync(real, link, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+
+      const target = path.join(link, 'sub', 'out');
+      assert.throws(
+        () => generateSkeleton(fixtureStack(), target, { allowedRoot: tmp.path }),
+        (err) => err.code === 'E_UNSAFE_PATH',
+      );
+      // Nothing may have been written through the symlink into `real`.
+      assert.deepEqual(fs.readdirSync(path.join(real, 'sub')), [], 'no writes through the symlinked ancestor');
     } finally {
       tmp.cleanup();
     }
