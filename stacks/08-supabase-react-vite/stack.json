@@ -2,7 +2,7 @@
   "id": "08-supabase-react-vite",
   "name": "Supabase (BaaS) / React / Vite",
   "category": "baas",
-  "maturity": "proposed",
+  "maturity": "scaffolded",
   "description": "BaaS paradigm contrast stack: no custom backend — a React 18 + Vite + TypeScript browser client talks directly to Supabase (GoTrue auth via @supabase/supabase-js v2, PostgREST data access) with the public anon key; PostgreSQL Row Level Security is the authorization layer (owner-only policies on the apps table, no anon access); a client-side data layer normalizes every provider response into a stable {ok,data,error,requestId} envelope; SQL migrations plus a static RLS policy auditor are included; RLS runtime behavior and Supabase-local runs are documented as unverified (no Docker daemon in the authoring environment).",
   "web": {
     "framework": "React",
