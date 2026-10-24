@@ -21,12 +21,12 @@ export function errorWithCode(code, message) {
   return err;
 }
 
-/** Exit code for an error (defaults to generic failure). */
+/** Exit code for an error. Unknown or missing codes exit as E_IO (74). */
 export function exitCodeFor(err) {
   if (err && typeof err.code === 'string' && ERROR_CODES[err.code] !== undefined) {
-    return ERROR_CODES[err.code] ?? 1;
+    return ERROR_CODES[err.code];
   }
-  return 1;
+  return ERROR_CODES.E_IO;
 }
 
 /** Format an error for stderr: code + message, never a stack trace. */

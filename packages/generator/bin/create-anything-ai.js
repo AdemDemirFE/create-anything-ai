@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { loadCatalogFromDisk, listCommand, validateCommand, statusCommand, requireStack } from '../lib/commands.js';
 import { generateSkeleton, checkStackId } from '../lib/generate.js';
 import { assertCliOutputPolicy } from '../lib/paths.js';
-import { errorWithCode } from '../lib/errors.js';
+import { errorWithCode, formatError, exitCodeFor } from '../lib/errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CATALOG = path.resolve(__dirname, '..', '..', '..', 'stacks', 'catalog.json');
@@ -163,13 +163,7 @@ function main(argv) {
 try {
   process.exitCode = main(process.argv.slice(2));
 } catch (err) {
-  process.stderr.write(`${formatErrorMessage(err)}\n`);
-  const code = err && typeof err.code === 'string' ? err.code : 'E_IO';
-  const exitMap = { E_INVALID_STACK: 1, E_TARGET_EXISTS: 2, E_UNSAFE_PATH: 3, E_CATALOG_INVALID: 4, E_USAGE: 64, E_IO: 74 };
-  process.exitCode = exitMap[code] ?? 74;
-}
-
-function formatErrorMessage(err) {
-  const code = err && typeof err.code === 'string' ? err.code : 'E_IO';
-  return `${code}: ${err && err.message ? err.message : String(err)}`;
+  // Single source of truth for error formatting and exit codes: lib/errors.js.
+  process.stderr.write(`${formatError(err)}\n`);
+  process.exitCode = exitCodeFor(err);
 }

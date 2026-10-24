@@ -133,10 +133,13 @@ export function generateSkeleton(stack, outputDir, { allowedRoot, force = false,
     if (!isInsideRoot(absDir, absOutput)) {
       throw errorWithCode('E_UNSAFE_PATH', `Planned directory escaped output root: ${absDir}`);
     }
+    assertNoSymlinkAncestry(absDir);
     fs.mkdirSync(absDir, { recursive: true });
   }
 
-  // Files with overwrite protection.
+  // Files with overwrite protection. Every planned file is re-verified with
+  // lstat immediately before writing, so even --force overwrites cannot follow
+  // a symlink planted at (or above) the planned path.
   for (const file of plan.files) {
     const absFile = path.join(absOutput, file.path);
     if (!isInsideRoot(absFile, absOutput)) {
@@ -146,6 +149,19 @@ export function generateSkeleton(stack, outputDir, { allowedRoot, force = false,
     if (exists && !force) {
       report.skipped.push(file.path);
       continue;
+    }
+    assertNoSymlinkAncestry(absFile);
+    let stat = null;
+    try {
+      stat = fs.lstatSync(absFile);
+    } catch {
+      // Does not exist: plain create below.
+    }
+    if (stat && stat.isSymbolicLink()) {
+      throw errorWithCode(
+        'E_UNSAFE_PATH',
+        `Refusing to overwrite symlink at "${absFile}" (symlink escape protection)`,
+      );
     }
     const content = file.path === 'stack.json' ? renderStackJson(stack) : renderReadme(stack);
     fs.writeFileSync(absFile, content, { encoding: 'utf8', flag: 'w' });

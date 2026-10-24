@@ -11,7 +11,8 @@ export function loadCatalogFromDisk(catalogPath) {
   try {
     raw = fs.readFileSync(catalogPath, 'utf8');
   } catch (err) {
-    throw errorWithCode('E_CATALOG_INVALID', `E_CATALOG_INVALID: Cannot read catalog at ${catalogPath}: ${err.message}`);
+    // The code lives on err.code; formatError adds the single "CODE: " prefix.
+    throw errorWithCode('E_CATALOG_INVALID', `Cannot read catalog at ${catalogPath}: ${err.message}`);
   }
   const loaded = loadCatalog(raw);
   if (!loaded.ok) {
