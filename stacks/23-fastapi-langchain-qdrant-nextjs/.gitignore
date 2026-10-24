@@ -1,0 +1,7 @@
+# Stack 23 local ignores (runtime data & dependencies)
+# Vector-storage runtime files produced by the local retriever adapter.
+backend/.local_storage/
+# Next.js build output and incremental caches.
+web/.next/
+web/*.tsbuildinfo
+
