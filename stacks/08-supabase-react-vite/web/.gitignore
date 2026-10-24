@@ -1,0 +1,9 @@
+# Frontend build output and dependencies
+dist/
+node_modules/
+coverage/
+
+# Local environment files (never commit real keys)
+.env
+.env.local
+.env.*.local
