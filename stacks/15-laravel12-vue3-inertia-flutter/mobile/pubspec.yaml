@@ -1,0 +1,32 @@
+name: stack15_mobile
+description: >-
+  Reference Stack 15 Flutter client. Implements the four-screen journey
+  (register, login, home/notes, algorithm workbench) against the stack's
+  /api/v1 envelope contract. NOT VERIFIED: no Flutter SDK in the
+  implementation environment (see ../verification.md). This code has never
+  been compiled, analyzed, or tested.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  # Declared, not verified - no SDK available in the implementation
+  # environment. Target: latest stable Flutter (Dart 3.x era).
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Minimal HTTP client; the Laravel session cookie is tracked manually
+  # because dart:io has no cross-platform CookieJar.
+  http: ^1.5.0
+  # Session cookie storage. Secure storage only - never plain preferences
+  # (docs/PRODUCT_REQUIREMENTS.md section 6, Login).
+  flutter_secure_storage: ^10.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
