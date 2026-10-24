@@ -100,4 +100,30 @@ describe('login throttle', () => {
     // The other account is unaffected.
     await login(b, PASSWORD).expect(200)
   })
+
+  it('window expiry uses the configured seconds, not a hard-coded 60s', async () => {
+    // Drives recordFailure/isThrottled directly with a tiny configured window
+    // and a fake clock, so no suite needs to wait real seconds.
+    const { isThrottled, recordFailure, resetThrottle } = await import('../src/security/throttle.js')
+    resetThrottle()
+    const config = { windowSeconds: 2, maxFailures: 5 }
+    const email = 'window@example.com'
+    const ip = '203.0.113.10'
+    const t0 = 1_000_000
+
+    for (let i = 0; i < 5; i += 1) recordFailure(email, ip, config, t0)
+    expect(isThrottled(email, ip, config, t0 + 1_000)).toBe(true) // inside the 2s window
+
+    // At t0+3s the configured window has passed: not throttled, and a new
+    // failure opens a FRESH window with count 1. The pre-fix implementation
+    // compared against a hard-coded 60s here, so the tally would have kept
+    // the old window start and the configured window would only have been
+    // honored by isThrottled, never by recordFailure.
+    expect(isThrottled(email, ip, config, t0 + 3_000)).toBe(false)
+    recordFailure(email, ip, config, t0 + 3_000)
+    expect(isThrottled(email, ip, config, t0 + 4_500)).toBe(false) // 1 failure in the fresh window
+    for (let i = 0; i < 4; i += 1) recordFailure(email, ip, config, t0 + 4_500)
+    expect(isThrottled(email, ip, config, t0 + 4_500)).toBe(true) // 5 in the fresh window -> throttled
+    resetThrottle()
+  })
 })

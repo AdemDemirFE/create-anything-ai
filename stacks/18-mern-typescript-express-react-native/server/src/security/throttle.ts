@@ -42,7 +42,7 @@ export function isThrottled(email: string, ip: string, config: ThrottleConfig, n
   return record.count >= config.maxFailures
 }
 
-export function recordFailure(email: string, ip: string, now = Date.now()): void {
+export function recordFailure(email: string, ip: string, config: ThrottleConfig, now = Date.now()): void {
   const key = keyFor(email, ip)
   const record = failures.get(key)
   if (!record) {
@@ -50,7 +50,7 @@ export function recordFailure(email: string, ip: string, now = Date.now()): void
     return
   }
   // Same fixed window that isThrottled uses: past the window a new one starts.
-  if (now - record.windowStart > 60_000) {
+  if (now - record.windowStart > config.windowSeconds * 1000) {
     failures.set(key, { count: 1, windowStart: now })
     return
   }
