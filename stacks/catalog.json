@@ -43,7 +43,7 @@
       "id": "04-go-fiber-htmx-flutter",
       "number": 4,
       "category": "enterprise-cross-platform",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "05-nestjs-typeorm-nextjs-reactnative",

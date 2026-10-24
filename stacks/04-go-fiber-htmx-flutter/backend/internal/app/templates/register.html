@@ -1,0 +1,43 @@
+{{define "register"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Swap even 4xx bodies so rate-limit/validation fragments stay visible -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"429","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title>Register — Stack 04</title>
+  <script src="/static/htmx.min.js" defer></script>
+  <style>
+    :root { font-family: system-ui, sans-serif; }
+    body { max-width: 44rem; margin: 0 auto; padding: 1.5rem; color: #1c2733; background: #f7f9fb; }
+    header nav a { margin-right: 1rem; }
+    .card { background: #fff; border: 1px solid #d7dee6; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+    .error { color: #b42318; background: #fef3f2; border: 1px solid #f4c7c3; border-radius: 6px; padding: .5rem .75rem; margin: .5rem 0; }
+    .flash { color: #067647; background: #ecfdf3; border: 1px solid #abefc6; border-radius: 6px; padding: .5rem .75rem; margin: .5rem 0; }
+    .field-error { color: #b42318; font-size: .875rem; }
+    label { display: block; font-weight: 600; margin-top: .75rem; }
+    input, textarea, select { width: 100%; padding: .5rem; margin-top: .25rem; border: 1px solid #98a2b3; border-radius: 6px; box-sizing: border-box; }
+    button { margin-top: 1rem; padding: .5rem 1.25rem; background: #175cd3; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    button[disabled] { opacity: .6; cursor: wait; }
+    .muted { color: #52667a; font-size: .875rem; }
+    footer { margin-top: 2rem; color: #52667a; font-size: .8125rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/">Home</a>
+      <a href="/register">Register</a>
+      <a href="/login">Log in</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Create account</h1>
+    <div class="card">
+      {{template "register-form" .}}
+      <p class="muted">Already registered? <a href="/login">Log in</a>.</p>
+    </div>
+  </main>
+  <footer>Stack 04 — Go / Fiber / htmx / Flutter reference implementation (server-rendered, no SPA).</footer>
+</body>
+</html>{{end}}
