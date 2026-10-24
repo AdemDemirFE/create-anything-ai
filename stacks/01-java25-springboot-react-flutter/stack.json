@@ -1,0 +1,44 @@
+{
+  "id": "01-java25-springboot-react-flutter",
+  "name": "Java / Spring Boot + React + Flutter",
+  "category": "enterprise-cross-platform",
+  "maturity": "proposed",
+  "description": "Proposed multi-client application stack. Versions must be compatibility-validated before implementation.",
+  "backend": {
+    "language": "Java",
+    "framework": "Spring Boot"
+  },
+  "web": {
+    "framework": "React",
+    "buildTool": "Vite"
+  },
+  "mobile": {
+    "framework": "Flutter"
+  },
+  "data": [
+    "PostgreSQL",
+    "Redis"
+  ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web",
+    "ios",
+    "android"
+  ],
+  "requires": [
+    "JDK",
+    "Node.js",
+    "Flutter SDK",
+    "Docker"
+  ],
+  "verification": {
+    "manifest": false,
+    "unit": false,
+    "integration": false,
+    "e2e": false,
+    "lastVerifiedAt": null,
+    "evidencePath": null
+  }
+}
