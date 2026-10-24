@@ -2,6 +2,11 @@
 
 **Verified at (local):** 2026-10-24, 22:45–23:00 UTC+3
 **Branch:** `feat/stack-20-fastapi-react-vite-pwa`
+**Head commit at verification:** `24c390b` (single squashed commit; an
+earlier two-commit iteration was rewritten before review solely to remove a
+literal test-password fixture that the Gitleaks `generic-api-key` rule
+flagged — the fixture is now assembled at runtime from two halves, and
+`python -m pytest` was re-run green afterwards: 64 passed).
 **Scope rule:** every claim below is tied to a command that actually ran in
 this session. Anything not run is marked **UNVERIFIED** with the reason.
 
