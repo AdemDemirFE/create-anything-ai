@@ -32,14 +32,15 @@ gofmt -l .            # empty output (no formatting diffs)
 go test ./... -count=1  # exit 0
 ```
 
-Results: **30 tests pass** — 16 app integration + 14 ws (hub unit + pump).
+Results: **36 tests pass** — 16 app integration + 20 ws (hub unit + pump +
+shutdown/security regressions).
 
 ```text
-ok  .../internal/app   2.634s  (16 tests)
-ok  .../internal/ws    0.963s  (14 tests)
+ok  .../internal/app   4.915s  (16 tests)
+ok  .../internal/ws    1.075s  (20 tests)
 ```
 
-### internal/ws — hand-rolled hub + pumps (14)
+### internal/ws — hand-rolled hub + pumps (20)
 
 Hub unit (real goroutine + channels, channel-synced, no sleeps):
 
@@ -62,6 +63,22 @@ Connection-level (gorilla dialer ↔ httptest server through the REAL
 - `TestStalledWriterEventuallyFailsDeadline` — stalled TCP peer + full
   buffer → drop path tears the connection down
 - `TestCloseFrameEndsRegistration` — polite close unregisters
+
+Shutdown + security regressions (`security_shutdown_test.go`, added after
+AO review):
+
+- **`TestOversizedFrameClosesConnection`** — read limit 512B, small frame
+  answered with pong, 1KB+ frame → read loop fails, client unregistered,
+  conn closed (memory-DoS guard over the real ServeClient wiring)
+- `TestFrameAtLimitIsAccepted` — boundary: exactly 512B still delivered
+- **`TestPostStopCallsReturnImmediately`** — Register/Unregister/Broadcast
+  after Stop return immediately (Register/Unregister → `false`), no block
+- **`TestStopReleasesParkedSenders`** — senders parked on the hub channels
+  when Stop fires are released by the done guard, not parked forever
+- **`TestGoroutineCountStableAcrossHubCycles`** — 5 full hub lifecycles
+  with a registered client each; `runtime.NumGoroutine` returns to the
+  pre-hub baseline (no leaked hub loop, no leaked parked senders)
+- `TestStopIsIdempotentAndRaceSafe` — 4 concurrent Stops, no panic/hang
 
 ### internal/app — production wiring over httptest.Server (16)
 
@@ -172,6 +189,23 @@ processes were running on the box; no containers were started or touched.)
    `onclose` before closing so a deliberate close cannot schedule a
    reconnect (caught by the mock-WS reconnect test); reconnect test drives
    `close()` (which fires `onclose`) instead of calling the handler bare.
+6. **AO review finding — missing `SetReadLimit`:** an authenticated client
+   could push arbitrarily large frames into server memory (memory-DoS).
+   Fixed: `Config.MaxMessageSize` (default 64KB via `DefaultMaxMessageSize`)
+   applied in `readPump` via `conn.SetReadLimit`; over-limit frame fails the
+   read loop and tears the connection down. Regression tests:
+   `TestOversizedFrameClosesConnection` (over-limit → dropped) +
+   `TestFrameAtLimitIsAccepted` (boundary).
+7. **AO review finding — shutdown goroutine leak:** `Register`/`Unregister`
+   parked forever after `Stop` (channel sends with no reader). Fixed by
+   selecting every entry point against the hub's `done` signal instead of
+   closing the entry channels (closing them would deliver nil `*Client`s to
+   Run and race parked senders into send-on-closed-channel panics — an
+   intermediate implementation of exactly that panicked in tests and was
+   reverted). Run's exit path now closes every remaining client (pumps exit)
+   and clears the map. Regression tests: `TestPostStopCallsReturnImmediately`,
+   `TestStopReleasesParkedSenders`, `TestGoroutineCountStableAcrossHubCycles`
+   (`runtime.NumGoroutine` pinned), `TestStopIsIdempotentAndRaceSafe`.
 
 ## 6. Docker Compose (NOT RUN — unverified)
 
@@ -205,7 +239,10 @@ unverified in `stack.json`'s scope via this file. The first real
   handshake (test-asserted); anonymous upgrade 401 (test-asserted).
 - WS input handling: inbound frames are parsed as `{"type":"..."}` only;
   malformed frames are ignored; nothing user-supplied is ever echoed or
-  broadcast (server-generated payloads only).
+  broadcast (server-generated payloads only). Inbound frames are capped at
+  `MaxMessageSize` (64KB default) via `conn.SetReadLimit` — an over-limit
+  frame fails the read loop and tears the connection down (memory-DoS guard,
+  test-asserted).
 - Algorithm workbench: fixed catalog, closed-switch dispatch, no code-input
   path; input bounded at 10,000 chars; request bodies capped at 256KB (413).
 - X-Request-Id: inbound ids validated (printable ASCII, 8..128) before echo
@@ -230,7 +267,8 @@ unverified in `stack.json`'s scope via this file. The first real
   (id pattern, maturity enum `scaffolded`, verification block); CI
   validate-catalog re-checks against the catalog (also updated to
   `scaffolded`).
-- `unit`: **true** — 14 ws tests (hub + pumps) really ran green.
+- `unit`: **true** — 20 ws tests (hub + pumps + shutdown/security) really
+  ran green.
 - `integration`: **true** — 16 httptest integration tests over the exact
   production wiring (REST + WS upgrade paths) really ran green; live smoke
   passed against a real server.

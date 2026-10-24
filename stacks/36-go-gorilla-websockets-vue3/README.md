@@ -58,7 +58,7 @@ app-level ping→pong. Exit 0 = passed.
 
 ```powershell
 # backend (from backend/)
-go test ./... -count=1          # 30 tests (16 app integration + 14 ws)
+go test ./... -count=1          # 36 tests (16 app integration + 20 ws)
 go vet ./...
 gofmt -l .                      # empty output
 
