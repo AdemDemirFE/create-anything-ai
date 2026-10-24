@@ -1,0 +1,23 @@
+# Dependabot configuration.
+# Weekly update checks for the two ecosystems this repository uses:
+# - GitHub Actions used by the workflows in .github/workflows/
+# - npm packages of the generator CLI in packages/generator/
+#
+# If packages/generator/ does not exist yet (the package is owned by another
+# worker), the npm ecosystem simply has nothing to report until the directory
+# and its package.json land.
+
+version: 2
+
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: 'npm'
+    directory: '/packages/generator'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
