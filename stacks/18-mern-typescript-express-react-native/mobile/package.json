@@ -1,0 +1,22 @@
+{
+  "name": "stack18-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "main": "index.ts",
+  "description": "Stack 18 React Native (Expo) wrapper. THIN WRAPPER over ../shared: all API calls and envelope handling come from the shared layer. NOTE: this app was never executed — the Expo SDK is not available in the build environment. Status: UNVERIFIED.",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.9"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.31",
+    "typescript": "5.9.3"
+  }
+}

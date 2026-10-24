@@ -1,0 +1,39 @@
+{
+  "name": "stack18-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stack 18 MERN server: Express 4 + Mongoose 8, cookie sessions, worker-thread bcrypt, documents CRUD.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.5",
+    "express": "4.21.2",
+    "mongoose": "8.24.7"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
+    "@types/cors": "2.8.19",
+    "@types/express": "4.17.25",
+    "@types/node": "24.19.2",
+    "@types/supertest": "7.2.1",
+    "mongodb-memory-server": "10.4.3",
+    "supertest": "7.3.1",
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  },
+  "allowScripts": {
+    "mongodb-memory-server@10.4.3": true,
+    "esbuild@0.21.5": true
+  }
+}
