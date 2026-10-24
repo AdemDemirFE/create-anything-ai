@@ -37,8 +37,12 @@ Mutation matrix (id -> defect -> expected detector):
   M11 absolute evidencePath to an EXISTING outside   -> validate_catalog  C10 ("is an
       file                                                absolute path" reason)
   M12 malformed stacks/<id>/stack.json (invalid JSON)-> validate_schemas  S03
-  M13 stack 05 promoted in manifest+catalog with     -> validate_catalog  C11 (+C12),
-      invented tech keys, all gates false                promoted-without-gates/evidence
+  M13 invented tech keys + scaffolded claim on a     -> validate_catalog  C11 (+C12),
+      never-decided placeholder (all gates false)        gate-ladder + TBD-marker rules
+  M14 spec-ready stack, requires decided, gates      -> validate_catalog  C11 PASS (positive
+      all false, no evidence                             control: QUALITY_GATES ladder)
+  M15 blocked stack, frozen placeholder content      -> validate_catalog  C11 PASS + C12 PASS
+      (requires keeps to-be-determined)                  (positive control: conscious stop)
 
 M8 is a positive control, not a defect: it proves the C10 dual-resolution
 behaviour documented for finding F-8 — a manifest like PR #7's
@@ -67,13 +71,21 @@ message states the absolute-path rejection ("is an absolute path").
 M12 truncates a stack manifest to invalid JSON; validate_schemas.py must
 report "[FAIL] S03: ... invalid JSON" with a documented exit code and no
 traceback (the guarded `_load_json` path).
-M13 (follow-up review) closes the last C11 gap: stack 05 is promoted in
-BOTH the manifest and the catalog (so C08's manifest-vs-catalog agreement
-holds) with invented backend/web keys and every gate still false. The old
-code only gated C11-style rules on stack 01, so this slipped through; the
-generalised C11 now requires any non-proposed stack to claim at least one
-true gate with in-repo evidence, and C12 adds a second layer. The
-assertion requires "[FAIL] C11:".
+M13 (follow-up review round 2) closes the last C11 gap: stack 05 is
+promoted in BOTH the manifest and the catalog (so C08's manifest-vs-catalog
+agreement holds) with invented backend/web keys and every gate still
+false. The old code only gated C11-style rules on stack 01, so this slipped
+through; the ladder-aligned C11 now requires scaffolded+ stacks to claim at
+least one true gate with in-repo evidence, and C12 adds a second layer
+(the TBD marker may only live in proposed/blocked). The assertion requires
+"[FAIL] C11:".
+M14/M15 (review round 3) are the positive controls for the legitimate
+gateless maturities the ladder must accept:
+  * M14: stack 06 becomes spec-ready with decided requires and all gates
+    still false — must NOT fail (build/unit are "Planned" at that rung);
+  * M15: stack 09 becomes blocked, keeping the to-be-determined marker —
+    must NOT fail (a conscious stop is a valid resting state).
+Both assert exit 0 with "[PASS] C11:" and "[PASS] C12:" lines present.
 
 Sensitivity probes (do-nothing stub negative controls): for M9 and M10 the
 self-check also runs a stub validator that inspects nothing and always
@@ -263,9 +275,11 @@ def expect_pass_with_checks(results: list[tuple[str, int, str]], script: str,
                         f"lines for {missing_pass} never appeared")
             if "Traceback (most recent call last)" in output:
                 return f"NOT CAUGHT (crash): {script} printed a traceback alongside exit 0"
-            return (f"PASS-WITH-WARN ({script}, exit 0, [WARN] {warn_code} present"
-                    + (f", [PASS] lines for {pass_codes} present" if pass_codes else "")
-                    + ")")
+            if warn_code is not None:
+                return (f"PASS-WITH-WARN ({script}, exit 0, [WARN] {warn_code} present"
+                        + (f", [PASS] lines for {pass_codes} present" if pass_codes else "") + ")")
+            return (f"PASS ({script}, exit 0"
+                    + (f", [PASS] lines for {pass_codes} present" if pass_codes else "") + ")")
     return f"NOT CAUGHT (missed): script {script} never ran"
 
 
@@ -439,24 +453,59 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
     record("M12", "validate_schemas.py", ["S03"], root,
            run_validator("validate_schemas.py", root))
 
-    # M13 (follow-up review): a stack 02-40 promoted in BOTH the manifest
+    # M13 (review round 2): a stack 02-40 promoted in BOTH the manifest
     # and the catalog (C08 agreement intact) with invented technology keys
     # and every gate still false. The placeholder checks are maturity-gated
     # and the old C11 only covered stack 01, so nothing used to fail; the
-    # generalised C11 (any non-proposed stack needs >=1 true gate with
-    # in-repo evidence) must catch it.
+    # ladder-aligned C11 (scaffolded+ needs >=1 true gate with in-repo
+    # evidence) must catch it, and C12 adds the TBD-marker layer.
     root = fresh()
     p = root / "stacks" / "05-nestjs-typeorm-nextjs-reactnative" / "stack.json"
 
     def m13(manifest: dict) -> None:
-        manifest["maturity"] = "verified"
+        manifest["maturity"] = "scaffolded"
         manifest["backend"] = {"language": "TypeScript", "framework": "NestJS"}
         manifest["web"] = {"framework": "NextJS"}
     edit_json(p, m13)
     cat = root / "stacks" / "catalog.json"
-    edit_json(cat, lambda c: c["stacks"][4].__setitem__("maturity", "verified"))
+    edit_json(cat, lambda c: c["stacks"][4].__setitem__("maturity", "scaffolded"))
     record("M13", "validate_catalog.py", ["C11"], root,
            run_validator("validate_catalog.py", root))
+
+    # M14 (review round 3, positive control): a spec-ready stack has decided
+    # its requirements but implemented nothing, so gates stay all-false with
+    # no evidence — the ladder must accept this.
+    root = fresh()
+    p = root / "stacks" / "06-kotlin-ktor-compose-multiplatform" / "stack.json"
+
+    def m14(manifest: dict) -> None:
+        manifest["maturity"] = "spec-ready"
+        manifest["requires"] = ["JDK 21", "Node.js"]
+    edit_json(p, m14)
+    cat = root / "stacks" / "catalog.json"
+    edit_json(cat, lambda c: c["stacks"][5].__setitem__("maturity", "spec-ready"))
+    out14 = run_validator("validate_catalog.py", root)
+    results.append(("M14", out14[0], expect_pass_with_checks(
+        [("validate_catalog.py",) + out14], "validate_catalog.py",
+        warn_code=None, pass_codes=["C11", "C12"])))
+    shutil.rmtree(root.parent, ignore_errors=True)
+
+    # M15 (review round 3, positive control): a blocked stack is a conscious
+    # stop — it keeps the to-be-determined marker and false gates, and the
+    # ladder must accept that resting state (C12 exempts blocked).
+    root = fresh()
+    p = root / "stacks" / "09-supabase-nextjs-tailwind" / "stack.json"
+
+    def m15(manifest: dict) -> None:
+        manifest["maturity"] = "blocked"
+    edit_json(p, m15)
+    cat = root / "stacks" / "catalog.json"
+    edit_json(cat, lambda c: c["stacks"][8].__setitem__("maturity", "blocked"))
+    out15 = run_validator("validate_catalog.py", root)
+    results.append(("M15", out15[0], expect_pass_with_checks(
+        [("validate_catalog.py",) + out15], "validate_catalog.py",
+        warn_code=None, pass_codes=["C11", "C12"])))
+    shutil.rmtree(root.parent, ignore_errors=True)
 
     return results
 
