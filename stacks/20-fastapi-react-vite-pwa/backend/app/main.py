@@ -11,6 +11,7 @@ Boundaries:
 
 from __future__ import annotations
 
+import re
 import secrets
 import time
 import uuid
@@ -36,12 +37,24 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
     The correlation id flows into every envelope's `meta.request_id` and the
     `X-Request-Id` response header so clients can correlate failures.
+
+    Client-supplied X-Request-Id values are validated against
+    `^[A-Za-z0-9-]{1,64}$` before being echoed into envelopes/headers; any
+    other value (too long, wrong characters — header-injection or log-forging
+    payloads) is discarded and a fresh opaque id is generated instead
+    (test-asserted in tests/test_envelope.py).
     """
+
+    _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
+        supplied = request.headers.get("X-Request-Id")
+        if supplied and self._REQUEST_ID_PATTERN.fullmatch(supplied):
+            request_id = supplied
+        else:
+            request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         request.state.start_ns = time.perf_counter_ns()
         response = await call_next(request)

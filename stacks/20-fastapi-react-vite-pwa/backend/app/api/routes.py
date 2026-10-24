@@ -16,7 +16,7 @@ from app import config
 from app.algorithm import catalog as algo
 from app.api import schemas
 from app.auth import sessions, throttle
-from app.security import hash_password, verify_password
+from app.security import hash_password_async, timing_equalizer_hash, verify_password_async
 from app.store import STORE, User
 from app.web import error_codes
 from app.web.envelope import (
@@ -60,7 +60,7 @@ async def register(payload: schemas.RegisterRequest, request: Request) -> Respon
             code=error_codes.EMAIL_TAKEN,
             message="An account with this email already exists.",
         )
-    user = STORE.create_user(email, hash_password(payload.password))
+    user = STORE.create_user(email, await hash_password_async(payload.password))
     return envelope_response(
         request, data=schemas.UserOut(email=user.email), status_code=201
     )
@@ -85,10 +85,22 @@ async def login(
         return throttled
 
     user = STORE.get_user_by_email(email)
-    if user is None or not verify_password(payload.password, user.password_hash):
+    if user is None:
+        # Unknown email: burn one bcrypt verification against a fixed
+        # throwaway hash so response timing does not reveal whether the
+        # account exists (enumeration defense; test-asserted for shape).
+        await verify_password_async(payload.password, timing_equalizer_hash())
         throttle.record_failure(email, ip)
         # Identical code+message for unknown email vs wrong password:
         # account enumeration is blocked (test-asserted).
+        return envelope_error_response(
+            request,
+            status_code=401,
+            code=error_codes.INVALID_CREDENTIALS,
+            message="Invalid email or password.",
+        )
+    if not await verify_password_async(payload.password, user.password_hash):
+        throttle.record_failure(email, ip)
         return envelope_error_response(
             request,
             status_code=401,

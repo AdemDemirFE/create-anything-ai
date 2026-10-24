@@ -13,6 +13,12 @@ ARCHITECTURE.md §3):
 Sessions live in the in-memory store keyed by the SHA-256 digest of the
 cookie token. The raw token is never stored server-side and never logged.
 
+TTL model (review round 1): the 30-minute timeout is an **idle timeout** —
+every authenticated request calls `STORE.refresh_session`, which slides
+`expires_at` forward from the last activity. Activity resets the timer
+(test-asserted); a session untouched for 30 minutes expires even for an
+account that logged in seconds earlier from a different device context.
+
 Route-handler pattern: FastAPI discards header mutations made to the injected
 `response` parameter when the handler returns its own Response, so handlers
 build their envelope Response first and call `attach_session_cookie` on that
@@ -70,11 +76,19 @@ def destroy_session(request: Request, response: Response) -> None:
 
 
 def current_user(request: Request) -> User | None:
-    """Resolve the authenticated user from the session cookie, if valid."""
+    """Resolve the authenticated user from the session cookie, if valid.
+
+    Every successful resolution counts as activity and slides the idle
+    window: expiry is measured from the last request, not from login (the
+    documented idle-timeout decision; test-asserted in tests/test_security_store.py
+    and ARCHITECTURE.md §3).
+    """
     token = request.cookies.get(config.SESSION_COOKIE_NAME)
     if not token:
         return None
-    session: Session | None = STORE.get_session(session_token_digest(token))
+    digest = session_token_digest(token)
+    session: Session | None = STORE.get_session(digest)
     if session is None:
         return None
+    STORE.refresh_session(digest, config.SESSION_TTL_SECONDS)
     return STORE.get_user_by_id(session.user_id)

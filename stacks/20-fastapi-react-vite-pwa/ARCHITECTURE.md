@@ -19,10 +19,10 @@
 | Language (backend) | Python 3.13+ | 3.13.2 | `python --version`, real pytest run |
 | Backend framework | FastAPI 0.129 | 0.129.0 | pinned in requirements.txt, real tests |
 | ASGI server | uvicorn 0.41 | 0.41.0 | pinned; run command documented |
-| Password hashing | bcrypt 4.3 (direct) | 4.3.0 | real register/login/throttle tests |
+| Password hashing | bcrypt 4.3 (direct, off-loop) | 4.3.0 | real register/login/throttle/concurrency tests |
 | Web framework | React 19 | 19.2 | package.json, real vitest + build |
 | Build tool | Vite 7 | 7.3.7 | real `npm run build` (exit 0) |
-| Test runners | pytest 9.1 / vitest 4.1 | 9.1.1 / 4.1.12 | real runs (64 + 19 tests) |
+| Test runners | pytest 9.1 / vitest 4.1 | 9.1.1 / 4.1.12 | real runs (78 + 19 tests) |
 
 **Dependency decision — passlib replaced by direct `bcrypt`:** the task
 brief suggested passlib/bcrypt. passlib 1.7.4 (last release 2020) reads
@@ -32,6 +32,16 @@ stack calls the maintained `bcrypt` library directly with the same `$2b$`
 format, 12 rounds, automatic salts, and SHA-256 pre-hashing for inputs
 longer than bcrypt's 72-byte limit (avoids silent truncation). The decision
 is documented here and in `app/security.py` docstrings.
+
+**Event-loop decision (review round 1, finding 1):** bcrypt is deliberately
+CPU-bound (~100-300 ms at 12 rounds). All hash/verify calls from the
+`async def` route handlers run in a dedicated bounded `ThreadPoolExecutor`
+(`hash_password_async` / `verify_password_async` via `run_in_executor`), so
+a slow hash never blocks other requests. `tests/test_concurrency.py` proves
+it: a `/api/v1/health` probe completes well before an in-flight register's
+hash finishes, and four parallel registers all succeed. Unknown-email
+logins also burn one verification against a fixed non-secret throwaway
+hash to equalize response timing (enumeration-via-latency defense).
 
 ## 3. Architecture
 
@@ -72,6 +82,15 @@ with `timestamp` and `request_id`; `execution_ms` only where measured
 (`algorithmId`, `executionMs`, `serverTime`) to match the frozen SPA
 contract. Correlation id also flows back via `X-Request-Id`.
 
+**X-Request-Id validation (review round 1, finding 3):** a client-supplied
+`X-Request-Id` is honored only when it matches `^[A-Za-z0-9-]{1,64}$`;
+anything else (too long, whitespace, control characters — header-injection
+and log-forging vectors; httpx also refuses non-ASCII header values at the
+transport layer) is discarded and a fresh opaque 32-hex id is generated
+instead. The validated value is what appears both in the response header
+and in every envelope's `meta.request_id` (test-asserted in
+`tests/test_envelope.py`).
+
 Stable error codes: `VALIDATION_ERROR`, `EMAIL_TAKEN`, `INVALID_CREDENTIALS`,
 `RATE_LIMITED`, `UNAUTHORIZED`, `UNKNOWN_ALGORITHM`, `INPUT_TOO_LARGE`,
 `INVALID_INPUT`, `INTERNAL_ERROR`. FastAPI's 422 responses are re-wrapped
@@ -93,8 +112,15 @@ failures become `UNAUTHORIZED` envelopes (401), never bare `detail` objects.
   server-side (`logoutInvalidatesSession` is test-asserted); stateless JWTs
   would need a denylist — server-side state with extra machinery. No
   cross-service token exchange exists at this scope.
-- **Cookie:** `STACK20_SESSION`, HttpOnly, SameSite=Lax, path `/`,
-  `Max-Age` 1800 s (30-minute idle timeout). `Secure` flag is enabled by
+- **Cookie:** `STACK20_SESSION`, HttpOnly, SameSite=Lax, path `/`.
+  The `Max-Age` sent to the browser is 1800 s, refreshed on every
+  authenticated response-issuing call (login). Server-side, expiry is an
+  **idle timeout (sliding window, review round 1 finding 2):** every
+  authenticated request calls `STORE.refresh_session`, which re-anchors
+  `expires_at` at `now + 1800 s`; 30 minutes **without any request**
+  expires the session even minutes after login. Activity resets the timer
+  (test-asserted in `tests/test_session_ttl.py`: 2/3 TTL + activity + 2/3
+  TTL stays alive; TTL without activity dies). `Secure` flag is enabled by
   setting `SECURE_COOKIES=1` behind TLS (documented, off in dev by design).
 - **Tokens:** 32 bytes from the OS CSPRNG (`secrets.token_hex`), stored only
   as a SHA-256 digest; the raw token lives only in the cookie and is never
@@ -183,9 +209,13 @@ install/test/build/dev/preview). Startup: backend on :8000, then either
 ## 8. Testing and acceptance
 
 - Unit: `test_algorithm.py` (19), `test_security_store.py` (11),
-  `test_envelope.py` (7) — real runs.
+  `test_envelope.py` (11) — real runs.
 - Integration (TestClient): `test_api_integration.py` (27) covering the four
   journeys, 401/429 paths, envelope contract, CORS, and enumeration defense.
+- Concurrency (anyio + httpx.AsyncClient): `test_concurrency.py` (5) —
+  event-loop non-blocking under slow hashes (review finding 1).
+- Session TTL: `test_session_ttl.py` (5) — idle-window semantics (review
+  finding 2).
 - Web: `client.test.ts` (5), `Auth.test.tsx` (7), `Algorithm.test.tsx` (3),
   `pwa.test.ts` (4) — real vitest run; `npm run build` (tsc + vite) real.
 - UI/e2e: not automated in this task (documented gap).
@@ -204,7 +234,7 @@ install/test/build/dev/preview). Startup: backend on :8000, then either
 
 | Task | Scope | Status |
 |---|---|---|
-| TASK-008a | FastAPI backend + auth + throttle + tests | done (64/64 real) |
+| TASK-008a | FastAPI backend + auth + throttle + tests | done (78/78 real; review round 1 fixes incl.) |
 | TASK-008b | React + Vite PWA frontend, 4 screens, vitest + build | done (19/19 + build real) |
 | TASK-008c | verification.md + stack.json + catalog entry | done (evidence-based) |
 | TASK-008d | Docker/e2e/mobile | not in scope for this stack |

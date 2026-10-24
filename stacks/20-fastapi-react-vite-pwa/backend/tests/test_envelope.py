@@ -78,6 +78,46 @@ def test_request_id_header_matches_envelope(client: TestClient) -> None:
     assert res.headers["X-Request-Id"] == "corr-123"
 
 
+def test_valid_request_id_formats_are_accepted(client: TestClient) -> None:
+    """^[A-Za-z0-9-]{1,64}$: alphanumerics and hyphens up to 64 chars."""
+    res = client.get("/api/v1/health", headers={"X-Request-Id": "ABC-123"})
+    assert res.headers["X-Request-Id"] == "ABC-123"
+    res = client.get("/api/v1/health", headers={"X-Request-Id": "a" * 64})
+    assert res.headers["X-Request-Id"] == "a" * 64
+    # Underscore is not in the class → replaced.
+    res = client.get("/api/v1/health", headers={"X-Request-Id": "bad_id"})
+    assert res.headers["X-Request-Id"] != "bad_id"
+
+
+def test_invalid_request_id_is_replaced_with_opaque_id(client: TestClient) -> None:
+    """Header-injection / log-forging values must not reach the envelope.
+
+    (httpx refuses non-ASCII header values, so the unicode case is enforced
+    by the regex class itself — `^[A-Za-z0-9-]{1,64}$` admits no non-ASCII.)
+    """
+    for bad in ("bad id with spaces", "id;injected", "x" * 65, "id..//..//"):
+        res = client.get("/api/v1/health", headers={"X-Request-Id": bad})
+        returned = res.headers["X-Request-Id"]
+        assert returned != bad, bad
+        # The replacement is a fresh 32-char opaque hex id.
+        assert len(returned) == 32
+        assert all(c in "0123456789abcdef" for c in returned)
+
+
+def test_invalid_request_id_does_not_leak_into_envelope(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    res = client.get("/api/v1/me", headers={"X-Request-Id": "inj;ected-id"})
+    body = res.json()
+    assert body["meta"]["request_id"] != "inj;ected-id"
+    assert len(body["meta"]["request_id"]) == 32
+
+
+def test_missing_request_id_gets_generated_one(client: TestClient) -> None:
+    res = client.get("/api/v1/health")
+    assert len(res.headers["X-Request-Id"]) == 32
+
+
 def test_unhandled_paths_still_use_envelope_or_clean_404(client: TestClient) -> None:
     res = client.get("/api/v1/definitely-not-a-route")
     assert res.status_code == 404

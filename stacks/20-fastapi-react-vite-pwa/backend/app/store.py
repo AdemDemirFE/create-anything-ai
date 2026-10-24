@@ -31,7 +31,8 @@ class Session:
     token_hash: str  # sha256 of the cookie token; raw token never stored
     user_id: str
     created_at: float
-    expires_at: float
+    last_seen_at: float  # sliding-window anchor (updated on activity)
+    expires_at: float  # last_seen_at + TTL (recomputed on refresh)
 
 
 @dataclass
@@ -70,11 +71,13 @@ class MemoryStore:
     # --- sessions ----------------------------------------------------------
     def create_session(self, token_hash: str, user_id: str, ttl_seconds: int) -> Session:
         with self._lock:
+            now = time.time()
             session = Session(
                 token_hash=token_hash,
                 user_id=user_id,
-                created_at=time.time(),
-                expires_at=time.time() + ttl_seconds,
+                created_at=now,
+                last_seen_at=now,
+                expires_at=now + ttl_seconds,
             )
             self._sessions[token_hash] = session
             return session
@@ -87,6 +90,27 @@ class MemoryStore:
             if session.expires_at < time.time():
                 del self._sessions[token_hash]
                 return None
+            return session
+
+    def refresh_session(self, token_hash: str, ttl_seconds: int) -> Session | None:
+        """Idle-timeout anchor: slide the expiry window forward.
+
+        Returns the refreshed session, or None when the token is unknown or
+        already expired (an expired session is deleted lazily). Callers must
+        invoke this ONLY after `get_session` returned a live session; the
+        re-check here covers the race where the session expired between the
+        two calls.
+        """
+        with self._lock:
+            session = self._sessions.get(token_hash)
+            if session is None:
+                return None
+            if session.expires_at < time.time():
+                del self._sessions[token_hash]
+                return None
+            now = time.time()
+            session.last_seen_at = now
+            session.expires_at = now + ttl_seconds
             return session
 
     def delete_session(self, token_hash: str) -> None:

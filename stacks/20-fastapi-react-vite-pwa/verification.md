@@ -1,6 +1,7 @@
 # Verification — Stack 20 (TASK-008)
 
-**Verified at (local):** 2026-10-24, 22:45–23:00 UTC+3
+**Verified at (local):** 2026-10-24, 22:45–23:00 UTC+3 (initial); review
+round 1 fixes re-verified 2026-10-24 ~23:30 UTC+3
 **Branch:** `feat/stack-20-fastapi-react-vite-pwa`
 **Head commit at verification:** `24c390b` (single squashed commit; an
 earlier two-commit iteration was rewritten before review solely to remove a
@@ -45,11 +46,13 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Result: **64 passed, 0 failed, 2 warnings (starlette deprecations in the
-TestClient library itself), EXIT 0** — in ~29 s.
+Result: **78 passed, 0 failed, 2 warnings (starlette/anyio deprecations
+inside the TestClient library itself), EXIT 0** — in ~40 s.
+Initial run was 64 passed; +14 tests were added for review round 1
+(concurrency 5, session-TTL 5, request-id validation 4).
 
 ```text
-64 passed, 2 warnings in 28.86s
+78 passed, 2 warnings in 40.17s
 ```
 
 Coverage by file:
@@ -96,6 +99,57 @@ Issues found and fixed during real runs (all resolved, suite green):
 4. Pydantic `max_length=10_000` on the run input turned oversized payloads
    into 422; the contract wants the specific 400 `INPUT_TOO_LARGE`, so the
    bound is enforced in the route + engine (schema documents the decision).
+
+## 2b. Review round 1 fixes (REAL, re-verified)
+
+All three reviewer findings were fixed and covered with new tests; the full
+suite was re-run green after the changes (`78 passed`).
+
+**Finding 1 — bcrypt blocked the event loop.** `hash_password` /
+`verify_password` (bcrypt 12 rounds, ~100-300 ms) were called directly
+inside `async def` handlers. Fix: dedicated bounded `ThreadPoolExecutor`
+(max_workers=4, module-level) in `app/security.py`; handlers now call
+`hash_password_async` / `verify_password_async` (`run_in_executor`). The
+login path additionally burns one verification against a fixed non-secret
+throwaway hash for unknown emails, so response timing no longer reveals
+whether an account exists (latency-based enumeration defense). New tests
+(`tests/test_concurrency.py`, anyio plugin added to requirements):
+- `test_health_responsive_while_hash_runs`: while a register request's
+  bcrypt hash is in flight, a `/health` probe completes in under half the
+  hash's wall time — the loop is demonstrably not blocked (the reviewer's
+  requested parallel slow-hash scenario).
+- `test_concurrent_registrations_all_succeed`: 4 parallel registers
+  (4 real hashes) all complete with 201.
+- Wrapper tests: async == sync semantics, 6 parallel hashes all verify.
+
+**Finding 2 — session TTL was absolute but documented as idle.** Decision:
+**idle timeout (sliding window)** chosen — matches the documented intent
+and standard session semantics. `STORE.create_session` now records
+`last_seen_at`; `STORE.refresh_session` re-anchors `expires_at` at
+`now + TTL` and `current_user` calls it on every successful resolution.
+Activity resets the timer; a session untouched for 30 minutes dies even
+minutes after login. Tests (`tests/test_session_ttl.py`, relative fake
+clock): activity at 2/3 TTL then another 2/3 TTL keeps the session alive
+(an absolute TTL would have expired — pinned), inactivity past TTL expires
+even right after login, an activity chain keeps it alive indefinitely,
+refresh on an expired/unknown session returns None. Decision recorded in
+ARCHITECTURE.md §3 (Cookie bullet) and here.
+
+**Finding 3 — X-Request-Id echoed unvalidated.** `RequestContextMiddleware`
+now accepts a client-supplied `X-Request-Id` only when it matches
+`^[A-Za-z0-9-]{1,64}$`; any other value (too long, spaces, control
+characters — header-injection/log-forging vectors) is discarded and a fresh
+opaque 32-hex id is generated. The validated/generated id is what lands in
+the response header AND `meta.request_id`. Tests (`tests/test_envelope.py`):
+valid formats pass through unchanged (incl. 64-char), invalid values are
+replaced with a 32-char opaque hex id in both header and envelope, missing
+id gets a generated one.
+
+Test-client note (test-only): under the fake clock, httpx's cookie jar
+considers the session cookie expired (Max-Age checked against the patched
+`time.time`) and silently stops sending it; the TTL tests therefore set the
+cookie explicitly per request. This is test-harness behavior only — the
+app under test is unaffected.
 
 ## 3. Frontend — `npm test` + `npm run build` (REAL, PASSED)
 
@@ -189,8 +243,8 @@ suite, which is the durable evidence.
   validate-catalog re-checks on the PR.
 - `unit`: **true** — pytest unit files (algorithm/security/envelope) really
   ran green; web vitest suite really ran green.
-- `integration`: **true** — `test_api_integration.py` (TestClient) really
-  ran green.
+- `integration`: **true** — `test_api_integration.py` (TestClient) and the
+  review-round concurrency/TTL/request-id suites really ran green (78 total).
 - `e2e`: **false** — no automated browser e2e was run.
 - `lastVerifiedAt`: 2026-10-24T19:57:00Z (UTC timestamp of the green runs).
 - `evidencePath`: `verification.md` (this file).
