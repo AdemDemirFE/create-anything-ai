@@ -1,5 +1,6 @@
 package com.createanything.stack01.auth;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -15,6 +16,9 @@ import com.createanything.stack01.web.RateLimitedException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Registration and login use-cases. The same HTTP session cookie serves browser
@@ -147,17 +151,72 @@ public class AuthService {
     }
 
     /**
-     * Best-effort client IP. Direct connections are the norm for this
-     * reference stack; a configurable trusted-proxy header keeps the door
-     * open for real deployments without trusting spoofable headers blindly.
+     * Trusted proxies: IP ranges/addresses allowed to set X-Forwarded-For.
+     * Default is EMPTY - XFF is ignored entirely and the servlet container's
+     * {@code getRemoteAddr()} (the TCP peer) is the client identity. Only
+     * deployments that actually sit behind a configured reverse proxy should
+     * populate {@code app.trusted-proxies}; otherwise a client could spoof
+     * the header and rotate identities to bypass the throttle.
      */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
+    @Value("${app.trusted-proxies:}")
+    private List<String> trustedProxies;
+
+    /**
+     * Client identity for throttling.
+     *
+     * <ul>
+     *   <li>No trusted proxies configured (default): XFF is ignored; the
+     *       remote address of the TCP connection is used. A spoofed
+     *       X-Forwarded-For header changes nothing.</li>
+     *   <li>Trusted proxies configured AND the immediate peer
+     *       ({@code getRemoteAddr()}) is one of them: walk X-Forwarded-For
+     *       from RIGHT to LEFT, skipping trusted hops, and use the first
+     *       untrusted address as the client. Right-to-left is required
+     *       because each proxy appends to the right; entries to the left of
+     *       an untrusted hop are attacker-controlled.</li>
+     *   <li>Trusted proxies configured but the peer is NOT trusted: the peer
+     *       itself is the client (the header cannot be trusted from an
+     *       untrusted connection).</li>
+     * </ul>
+     */
+    private String clientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
+        if (trustedProxies.isEmpty() || !isTrustedProxy(remoteAddr)) {
+            return remoteAddr;
         }
-        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded == null || forwarded.isBlank()) {
+            return remoteAddr;
+        }
+        String[] hops = forwarded.split(",");
+        // Rightmost first: the entry closest to us was appended by the proxy
+        // we trust; keep walking left while the hop itself is trusted.
+        for (int i = hops.length - 1; i >= 0; i--) {
+            String hop = hops[i].trim();
+            if (!isTrustedProxy(hop)) {
+                return hop;
+            }
+        }
+        // Every hop is trusted (chained proxies): fall back to the leftmost,
+        // the original client as reported by the outermost trusted proxy.
+        return hops[0].trim();
+    }
+
+    private boolean isTrustedProxy(String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return false;
+        }
+        String address = candidate.trim();
+        return trustedProxies.stream().anyMatch(configured -> {
+            String proxy = configured.trim();
+            // Exact match, or IPv4/IPv6 CIDR-style prefix match ("10.0.0./16"
+            // is intentionally NOT supported here; entries are exact IPs or
+            // a trailing ".%"-free simple wildcard like "10.0.0.").
+            if (proxy.equalsIgnoreCase(address)) {
+                return true;
+            }
+            return proxy.endsWith(".") && address.startsWith(proxy);
+        });
     }
 
     private void validateEmail(String email) {

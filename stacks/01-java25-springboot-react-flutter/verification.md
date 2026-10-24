@@ -29,15 +29,16 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.2'
 mvn test
 ```
 
-Result: **BUILD SUCCESS, EXIT 0** — 26 tests (last full run after the CORS
-preflight test added in the orchestrator review round).
+Result: **BUILD SUCCESS, EXIT 0** — 29 tests (last full run after the
+trusted-proxy XFF fix; includes `ClientIpResolutionTest`).
 
 ```text
 [INFO] Tests run: 7,  Failures: 0, Errors: 0, Skipped: 0 -- AlgorithmEngineTest
 [INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- EnvelopeContractTest
 [INFO] Tests run: 2,  Failures: 0, Errors: 0, Skipped: 0 -- ProdCookieConfigTest
-[INFO] Tests run: 26, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- ClientIpResolutionTest
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -97,6 +98,16 @@ Issues found and fixed during real runs (all resolved, suite green):
    `Access-Control-Allow-Origin` + credentials grant, unknown origin gets
    none (compose/prod deployment case). Backend suite now 26 tests; full
    `mvn test` re-run green after the addition.
+8. Review round 3 fix: X-Forwarded-For was trusted unconditionally in the
+   login throttle's client-IP resolution, letting a client rotate spoofed
+   identities to bypass the 429 limit. Now XFF is honored only when the
+   immediate TCP peer matches `app.trusted-proxies` (default EMPTY = XFF
+   ignored, remoteAddr is the identity); in trusted-proxy mode the chain is
+   walked right-to-left and the first untrusted hop is used. Config in
+   `application.yml` + `.env.example` (`TRUSTED_PROXIES`), decision
+   documented in ARCHITECTURE.md, covered by `ClientIpResolutionTest`
+   (3 tests: default-ignores-XFF, spoofed-XFF-no-new-identity,
+   trusted-chain-right-to-left).
 
 ## 3. Web — `npm test` + build (REAL, PASSED)
 

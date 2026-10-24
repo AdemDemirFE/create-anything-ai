@@ -113,6 +113,17 @@ The correlation id is also returned in the `X-Request-Id` header.
   pure email-based denial-of-service against a victim. This is demo-grade and
   documented as such; production deployments should enforce limits at the
   edge/proxy.
+- **Client IP / X-Forwarded-For policy (throttle input):** XFF is **only**
+  honored when the immediate TCP peer (`getRemoteAddr()`) matches
+  `app.trusted-proxies` (exact IP or a prefix like `10.0.`); the default is
+  empty, which ignores XFF entirely and uses the peer address — a client
+  cannot rotate fake XFF identities to bypass the throttle. In trusted-proxy
+  mode the chain is walked **right-to-left**, skipping trusted hops, and the
+  first untrusted hop is the client (entries to the left of an untrusted hop
+  are attacker-controlled and never used). If every hop is trusted, the
+  leftmost entry (the outermost proxy's report) is used. Covered by
+  `ClientIpResolutionTest` (default-ignores-XFF, spoofed-XFF-from-untrusted-
+  peer, trusted-chain resolution).
 - **CORS:** origins come from `app.cors.allowed-origins` (comma-separated;
   default `localhost:5173/4173`), overridable via the `ALLOWED_ORIGINS` env
   var — wired through `@Value`, so non-localhost deployments can enable CORS.
