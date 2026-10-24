@@ -46,13 +46,15 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Result: **78 passed, 0 failed, 2 warnings (starlette/anyio deprecations
-inside the TestClient library itself), EXIT 0** — in ~40 s.
-Initial run was 64 passed; +14 tests were added for review round 1
-(concurrency 5, session-TTL 5, request-id validation 4).
+Result: **81 passed, 0 failed, 2 warnings (starlette/anyio deprecations
+inside the TestClient library itself), EXIT 0** — in ~41 s.
+Initial run was 64 passed; +14 tests for review round 1 (concurrency 5,
+session-TTL 5, request-id validation 4) and +3 more for the follow-up
+found in the thread body (coalesced opportunistic expired-session purge:
+session-TTL 5 → 8).
 
 ```text
-78 passed, 2 warnings in 40.17s
+81 passed, 2 warnings in 41.26s
 ```
 
 Coverage by file:
@@ -134,6 +136,17 @@ clock): activity at 2/3 TTL then another 2/3 TTL keeps the session alive
 even right after login, an activity chain keeps it alive indefinitely,
 refresh on an expired/unknown session returns None. Decision recorded in
 ARCHITECTURE.md §3 (Cookie bullet) and here.
+
+**Finding 2 follow-up (from the full thread body) — expired sessions
+languished until presented.** Added an **opportunistic, coalesced purge**:
+`MemoryStore._maybe_purge()` runs on session-store activity
+(`create_session`, `get_session`) at most once per 60 s
+(`PURGE_INTERVAL_SECONDS`) and deletes every expired session under the
+store lock — including sessions never presented again — so the in-memory
+mapping cannot grow unbounded. A forced `purge_expired_sessions()` (returns
+removed count) is exposed for ops/tests. Coalescing is pinned by test: an
+expired session within the interval survives a sweep window; after it, the
+next store activity removes it without that session ever being presented.
 
 **Finding 3 — X-Request-Id echoed unvalidated.** `RequestContextMiddleware`
 now accepts a client-supplied `X-Request-Id` only when it matches
@@ -244,7 +257,8 @@ suite, which is the durable evidence.
 - `unit`: **true** — pytest unit files (algorithm/security/envelope) really
   ran green; web vitest suite really ran green.
 - `integration`: **true** — `test_api_integration.py` (TestClient) and the
-  review-round concurrency/TTL/request-id suites really ran green (78 total).
+  review-round concurrency/TTL/request-id/purge suites really ran green
+  (81 total).
 - `e2e`: **false** — no automated browser e2e was run.
 - `lastVerifiedAt`: 2026-10-24T19:57:00Z (UTC timestamp of the green runs).
 - `evidencePath`: `verification.md` (this file).
