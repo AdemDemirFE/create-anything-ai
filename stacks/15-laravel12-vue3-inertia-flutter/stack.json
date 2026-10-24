@@ -1,0 +1,18 @@
+{
+  "id": "15-laravel12-vue3-inertia-flutter",
+  "name": "Laravel12 / Vue3 / Inertia / Flutter",
+  "category": "classic-web",
+  "maturity": "proposed",
+  "description": "Proposed catalog entry 15. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
+  "requires": [
+    "to-be-determined"
+  ],
+  "verification": {
+    "manifest": false,
+    "unit": false,
+    "integration": false,
+    "e2e": false,
+    "lastVerifiedAt": null,
+    "evidencePath": null
+  }
+}

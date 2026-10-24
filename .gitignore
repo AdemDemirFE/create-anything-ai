@@ -1,0 +1,61 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.test.example
+secrets/
+credentials/
+
+# Dependencies and build output
+node_modules/
+vendor/
+target/
+bin/
+obj/
+.venv/
+venv/
+__pycache__/
+.pnpm-store/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+ios/Pods/
+android/.gradle/
+android/app/build/
+*.apk
+*.aab
+*.ipa
+
+# IDE and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Databases, logs, runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.log
+logs/
+pgdata/
+redisdata/
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Test output
+coverage/
+test-results/
+playwright-report/

@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "updated": "2026-10-24",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Repository Foundation",
+      "worker": "worker-1",
+      "status": "review-requested",
+      "commit": "1eb9040",
+      "branch": "feat/repository-foundation",
+      "scope": {
+        "owned_paths": [
+          "README.md",
+          "CONTRIBUTING.md",
+          "LICENSE",
+          ".gitignore",
+          ".ai-agents/**",
+          "docs/AGENT_ORCHESTRATION.md",
+          "docs/ARCHITECTURE.md",
+          "docs/DEVELOPMENT_WORKFLOW.md",
+          "docs/GLM_AIHub_SETUP.md",
+          "docs/IMPLEMENTATION_ROADMAP.md",
+          "docs/INITIAL_AGENT_BACKLOG.md",
+          "docs/PRODUCT_REQUIREMENTS.md",
+          "docs/REPOSITORY_STRUCTURE.md",
+          "docs/STACK_01_REFERENCE_PLAN.md",
+          "docs/TESTING_STRATEGY.md",
+          "docs/TUTORIALS_RESOURCES.md"
+        ],
+        "forbidden_paths": [
+          "stacks/**",
+          "schemas/**",
+          "scripts/**",
+          "packages/**",
+          "tests/**",
+          ".github/**",
+          "docs/GENERATOR_CONTRACT.md",
+          "docs/STACK_CATALOG.md",
+          "docs/STACK_SPECIFICATION_TEMPLATE.md",
+          "docs/SECURITY_GIT_RULES.md",
+          "docs/QUALITY_GATES.md"
+        ]
+      },
+      "acceptance_criteria": [
+        "Draft documents reviewed, corrected, and committed with UTF-8 integrity",
+        "README and CONTRIBUTING reflect actual repository state without overstating features",
+        "No real secrets in any committed file",
+        "Orchestrator ledger initialized with 6 tasks",
+        "git diff --check clean; all files valid UTF-8"
+      ]
+    },
+    {
+      "id": "TASK-002",
+      "title": "Stack Catalog & Schema",
+      "worker": "worker-2",
+      "status": "in_progress",
+      "branch": "feat/stack-catalog-schema",
+      "scope": {
+        "owned_paths": [
+          "stacks/catalog.json",
+          "schemas/**",
+          "docs/STACK_CATALOG.md",
+          "docs/STACK_SPECIFICATION_TEMPLATE.md"
+        ],
+        "forbidden_paths": [
+          "README.md",
+          ".ai-agents/orchestrator/**"
+        ]
+      },
+      "acceptance_criteria": [
+        "stacks/catalog.json with 40 unique proposed entries",
+        "JSON Schemas for stack manifest and generation plan",
+        "Catalog validation passes for duplicates and maturity values"
+      ]
+    },
+    {
+      "id": "TASK-003",
+      "title": "Generator CLI",
+      "worker": "worker-3",
+      "status": "in_progress",
+      "branch": "feat/generator-cli",
+      "scope": {
+        "owned_paths": [
+          "scripts/**",
+          "templates/**",
+          "tests/generator/**"
+        ],
+        "forbidden_paths": [
+          "stacks/catalog.json",
+          "schemas/**"
+        ]
+      },
+      "acceptance_criteria": [
+        "CLI supports --list-stacks, --stack, --target, --dry-run",
+        "Strict stack ID validation and safe target path handling",
+        "Unit tests cover unknown IDs, traversal, existing targets, dry-run"
+      ]
+    },
+    {
+      "id": "TASK-004",
+      "title": "Security CI",
+      "worker": "worker-4",
+      "status": "in_progress",
+      "branch": "feat/ci-security",
+      "scope": {
+        "owned_paths": [
+          ".github/workflows/**",
+          "docs/SECURITY_GIT_RULES.md",
+          "docs/QUALITY_GATES.md"
+        ],
+        "forbidden_paths": [
+          "scripts/create-project.js",
+          "stacks/**"
+        ]
+      },
+      "acceptance_criteria": [
+        "CI workflow for markdown/JSON checks and secret scan",
+        "Secret scan has redacted output and fails on findings",
+        "Quality gates and security rules docs finalized"
+      ]
+    },
+    {
+      "id": "TASK-005",
+      "title": "Reference Stack 01 (Java 25 + Spring Boot + React + Flutter)",
+      "worker": "worker-5",
+      "status": "pending",
+      "branch": "feat/stack-01-java25-springboot-react-flutter",
+      "scope": {
+        "owned_paths": [
+          "stacks/01-java25-springboot-react-flutter/**"
+        ],
+        "forbidden_paths": [
+          "schemas/**",
+          "scripts/**",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        "Compatibility validated against official documentation before implementation",
+        "Four-screen baseline implemented with tests",
+        "verification.md lists exact commands and runtime versions",
+        "Flutter client staged honestly if toolchain unavailable"
+      ],
+      "dependencies": ["TASK-002", "TASK-003"]
+    },
+    {
+      "id": "TASK-006",
+      "title": "Independent QA",
+      "worker": "worker-6",
+      "status": "pending",
+      "branch": "feat/independent-qa",
+      "scope": {
+        "owned_paths": [
+          "tests/**"
+        ],
+        "forbidden_paths": [
+          "stacks/**/src/**",
+          "scripts/**"
+        ]
+      },
+      "acceptance_criteria": [
+        "Clean-room verification of at least one generated project",
+        "Evidence report with commands, exit codes, and known gaps",
+        "No fabricated test results"
+      ],
+      "dependencies": ["TASK-005"]
+    }
+  ]
+}

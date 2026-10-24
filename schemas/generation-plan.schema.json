@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/generation-plan.schema.json",
+  "title": "Create Anything AI Generation Plan",
+  "description": "Validates the AI-mode generation plan described in docs/GENERATOR_CONTRACT.md. Network, destructive, and external commands always require explicit approval; path traversal is rejected. Catalog membership of stack_id and filesystem-level path checks are enforced by the generator validator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stack_id",
+    "target_dir",
+    "files",
+    "commands",
+    "requires_approval"
+  ],
+  "properties": {
+    "stack_id": {
+      "description": "Must be an ID that exists in stacks/catalog.json.",
+      "type": "string",
+      "pattern": "^[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "target_dir": {
+      "description": "Relative output directory. Absolute paths, drive letters, and '..' segments are rejected.",
+      "$ref": "#/$defs/relativePath"
+    },
+    "files": {
+      "description": "Every file the plan intends to create, copy, render, or modify. At least one entry is required.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "action"
+        ],
+        "properties": {
+          "path": {
+            "description": "Relative path inside the target directory; traversal and absolute paths are rejected.",
+            "$ref": "#/$defs/relativePath"
+          },
+          "action": {
+            "enum": [
+              "create",
+              "copy",
+              "render",
+              "modify"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "risk"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "risk": {
+            "description": "read-only/local-write run without approval; network/destructive/external require requires_approval=true.",
+            "enum": [
+              "read-only",
+              "local-write",
+              "network",
+              "destructive",
+              "external"
+            ]
+          },          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requires_approval": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "description": "A relative path: no leading slash or backslash, no Windows drive-letter prefix, and no '..' path segments anywhere in the path.",
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "^/"
+          },
+          {
+            "pattern": "^\\\\"
+          },
+          {
+            "pattern": "^[A-Za-z]:"
+          },
+          {
+            "pattern": "(^|[/\\\\])\\.\\.([/\\\\]|$)"
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "commands": {
+            "contains": {
+              "properties": {
+                "risk": {
+                  "enum": [
+                    "network",
+                    "destructive",
+                    "external"
+                  ]
+                }
+              },
+              "required": [
+                "risk"
+              ]
+            }
+          }
+        },
+        "required": [
+          "commands"
+        ]
+      },
+      "then": {
+        "properties": {
+          "requires_approval": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}
