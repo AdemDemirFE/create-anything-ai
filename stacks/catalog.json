@@ -67,7 +67,7 @@
       "id": "08-supabase-react-vite",
       "number": 8,
       "category": "baas",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "09-supabase-nextjs-tailwind",
@@ -127,7 +127,7 @@
       "id": "18-mern-typescript-express-react-native",
       "number": 18,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "19-pevn-express-vue3-capacitor",
@@ -157,7 +157,7 @@
       "id": "23-fastapi-langchain-qdrant-nextjs",
       "number": 23,
       "category": "ai-native",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "24-springboot-springai-pgvector-react",
