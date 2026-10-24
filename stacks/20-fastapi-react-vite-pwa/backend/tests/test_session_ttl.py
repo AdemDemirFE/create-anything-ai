@@ -25,6 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config
+from app import store as store_module
 from app.security import session_token_digest
 from app.store import STORE
 
@@ -133,3 +134,71 @@ def test_refresh_rejects_expired_session(client: TestClient, clock: Clock) -> No
 
 def test_unknown_token_refresh_returns_none(client: TestClient) -> None:
     assert STORE.refresh_session("no-such-digest", config.SESSION_TTL_SECONDS) is None
+
+
+# --- opportunistic purge of never-presented expired sessions -----------------
+# (review round 1 follow-up: "expired sessions are only removed when
+# presented; add periodic/opportunistic purge")
+
+
+def test_purge_removes_expired_sessions_without_presenting_them(
+    client: TestClient, clock: Clock
+) -> None:
+    token_a = _login(client)
+    # Second account so we can drop one session while keeping the store warm.
+    client.post("/api/v1/register", json={"email": "purge@b.co", "password": PASSWORD})
+    res = client.post(
+        "/api/v1/login", json={"email": "purge@b.co", "password": PASSWORD}
+    )
+    token_b = res.headers["set-cookie"].split(f"{COOKIE}=")[1].split(";")[0]
+
+    digest_a = session_token_digest(token_a)
+    digest_b = session_token_digest(token_b)
+
+    # Past purge interval from __init__/reset anchor, so the next activity
+    # sweeps.
+    clock.advance(config.SESSION_TTL_SECONDS + store_module.PURGE_INTERVAL_SECONDS + 1)
+
+    # Presenting only session A must also sweep away expired session B,
+    # even though B was never presented again.
+    assert _get(client, token_a).status_code == 401  # A itself expired too
+    assert STORE._sessions.get(digest_a) is None
+    assert STORE._sessions.get(digest_b) is None
+
+
+def test_purge_is_coalesced_within_interval(
+    client: TestClient, clock: Clock
+) -> None:
+    """Within PURGE_INTERVAL_SECONDS of a sweep, expired sessions survive.
+
+    Coalescing is deliberate (bounded per-request cost); this pins it so a
+    future change that scans on every request is a conscious decision.
+    """
+    token = _login(client)
+    digest = session_token_digest(token)
+
+    clock.advance(config.SESSION_TTL_SECONDS + 5)  # expired, but < interval
+    STORE.purge_expired_sessions()  # force a sweep anchor now
+    # Create a fresh session; it expires; another get BEFORE the interval
+    # must NOT remove it (coalesced).
+    STORE.create_session(
+        session_token_digest("fresh-token"), "user-id", ttl_seconds=1
+    )
+    clock.advance(2)  # fresh session now expired, interval not elapsed
+    STORE.get_session(digest)  # triggers _maybe_purge, but coalesced
+    assert STORE._sessions.get(session_token_digest("fresh-token")) is not None
+
+    # After the interval, the next activity sweeps it.
+    clock.advance(store_module.PURGE_INTERVAL_SECONDS + 1)
+    STORE.get_session(digest)
+    assert STORE._sessions.get(session_token_digest("fresh-token")) is None
+
+
+def test_purge_expired_sessions_returns_count(clock: Clock) -> None:
+    STORE.reset()
+    digest = session_token_digest("forced-purge-token")
+    STORE.create_session(digest, "user-id", ttl_seconds=1)
+    clock.advance(2)
+    assert STORE.purge_expired_sessions() == 1
+    assert STORE.purge_expired_sessions() == 0
+    assert STORE.get_session(digest) is None

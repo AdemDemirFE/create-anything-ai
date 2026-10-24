@@ -120,7 +120,12 @@ failures become `UNAUTHORIZED` envelopes (401), never bare `detail` objects.
   `expires_at` at `now + 1800 s`; 30 minutes **without any request**
   expires the session even minutes after login. Activity resets the timer
   (test-asserted in `tests/test_session_ttl.py`: 2/3 TTL + activity + 2/3
-  TTL stays alive; TTL without activity dies). `Secure` flag is enabled by
+  TTL stays alive; TTL without activity dies). Expired sessions also leave
+  the store via an **opportunistic purge**: session-store activity runs a
+  coalesced sweep (at most once per 60 s, under the store lock) that
+  deletes every expired session — including ones never presented again —
+  so the session mapping cannot grow unbounded between presentations.
+  `Secure` flag is enabled by
   setting `SECURE_COOKIES=1` behind TLS (documented, off in dev by design).
 - **Tokens:** 32 bytes from the OS CSPRNG (`secrets.token_hex`), stored only
   as a SHA-256 digest; the raw token lives only in the cookie and is never
@@ -214,8 +219,9 @@ install/test/build/dev/preview). Startup: backend on :8000, then either
   journeys, 401/429 paths, envelope contract, CORS, and enumeration defense.
 - Concurrency (anyio + httpx.AsyncClient): `test_concurrency.py` (5) —
   event-loop non-blocking under slow hashes (review finding 1).
-- Session TTL: `test_session_ttl.py` (5) — idle-window semantics (review
-  finding 2).
+- Session TTL: `test_session_ttl.py` (8) — idle-window semantics plus the
+  coalesced opportunistic expired-session purge (review finding 2 incl.
+  follow-up).
 - Web: `client.test.ts` (5), `Auth.test.tsx` (7), `Algorithm.test.tsx` (3),
   `pwa.test.ts` (4) — real vitest run; `npm run build` (tsc + vite) real.
 - UI/e2e: not automated in this task (documented gap).
