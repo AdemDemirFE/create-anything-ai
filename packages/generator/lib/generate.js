@@ -127,41 +127,70 @@ export function generateSkeleton(stack, outputDir, { allowedRoot, force = false,
   // for a local CLI and are re-checked per write below.
   fs.mkdirSync(absOutput, { recursive: true });
 
-  // Empty platform directories.
+  // Empty platform directories. lstat each planned dir before creating:
+  // a symlink at the planned path is refused, and a file occupying the
+  // planned directory path is a hard conflict (E_TARGET_EXISTS).
   for (const dir of plan.dirs) {
     const absDir = path.join(absOutput, dir);
     if (!isInsideRoot(absDir, absOutput)) {
       throw errorWithCode('E_UNSAFE_PATH', `Planned directory escaped output root: ${absDir}`);
     }
     assertNoSymlinkAncestry(absDir);
+    let stat = null;
+    try {
+      stat = fs.lstatSync(absDir);
+    } catch {
+      // Does not exist: create below.
+    }
+    if (stat && stat.isSymbolicLink()) {
+      throw errorWithCode(
+        'E_UNSAFE_PATH',
+        `Refusing to write through symlink at planned directory "${absDir}" (symlink escape protection)`,
+      );
+    }
+    if (stat && !stat.isDirectory()) {
+      throw errorWithCode(
+        'E_TARGET_EXISTS',
+        `Planned directory "${dir}" already exists as a ${stat.isFile() ? 'file' : 'non-directory entry'}: ${absDir}. Remove it or choose another output directory.`,
+      );
+    }
     fs.mkdirSync(absDir, { recursive: true });
   }
 
-  // Files with overwrite protection. Every planned file is re-verified with
-  // lstat immediately before writing, so even --force overwrites cannot follow
-  // a symlink planted at (or above) the planned path.
+  // Files with overwrite protection. lstat (never existsSync, which follows
+  // symlinks) decides whether the entry exists, so a symlink at the planned
+  // path is always refused — with or without --force — and never followed.
   for (const file of plan.files) {
     const absFile = path.join(absOutput, file.path);
     if (!isInsideRoot(absFile, absOutput)) {
       throw errorWithCode('E_UNSAFE_PATH', `Planned file escaped output root: ${absFile}`);
     }
-    const exists = fs.existsSync(absFile);
-    if (exists && !force) {
-      report.skipped.push(file.path);
-      continue;
-    }
     assertNoSymlinkAncestry(absFile);
     let stat = null;
     try {
       stat = fs.lstatSync(absFile);
-    } catch {
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        throw errorWithCode('E_IO', `Cannot inspect planned file "${file.path}": ${err.message}`);
+      }
       // Does not exist: plain create below.
     }
     if (stat && stat.isSymbolicLink()) {
       throw errorWithCode(
         'E_UNSAFE_PATH',
-        `Refusing to overwrite symlink at "${absFile}" (symlink escape protection)`,
+        `Refusing to write through symlink at planned file "${absFile}" (symlink escape protection)`,
       );
+    }
+    if (stat && stat.isDirectory()) {
+      throw errorWithCode(
+        'E_TARGET_EXISTS',
+        `Planned file "${file.path}" already exists as a directory: ${absFile}. Remove it or choose another output directory.`,
+      );
+    }
+    const exists = stat !== null;
+    if (exists && !force) {
+      report.skipped.push(file.path);
+      continue;
     }
     const content = file.path === 'stack.json' ? renderStackJson(stack) : renderReadme(stack);
     fs.writeFileSync(absFile, content, { encoding: 'utf8', flag: 'w' });

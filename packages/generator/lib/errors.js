@@ -31,6 +31,6 @@ export function exitCodeFor(err) {
 
 /** Format an error for stderr: code + message, never a stack trace. */
 export function formatError(err) {
-  const code = err && typeof err.code === 'string' ? err.code : 'E_IO';
+  const code = err && typeof err.code === 'string' && ERROR_CODES[err.code] !== undefined ? err.code : 'E_IO';
   return `${code}: ${err && err.message ? err.message : String(err)}`;
 }

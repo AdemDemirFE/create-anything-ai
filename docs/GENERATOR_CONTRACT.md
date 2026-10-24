@@ -49,7 +49,8 @@ create-anything-ai <target-name> --stack <id>   # interactive/project-name form
 - Reject unknown stack IDs (`E_INVALID_STACK`, exit 1) before any filesystem access.
 - Resolve `--output` to an absolute path. Relative paths must stay inside the current working directory. Filesystem roots, the OS home directory, and the repository root are refused (`E_UNSAFE_PATH`, exit 3).
 - Reject path traversal (`..` escaping the allowed root) and refuse to create output under a symlinked path (symlink escape protection, `E_UNSAFE_PATH`).
-- Before every planned write (`mkdir` of a skeleton subdirectory, create or `--force` overwrite of a file), every existing component of the planned path is re-checked with `lstat`, walking from the filesystem root down to the target; a symlink planted anywhere on that chain — including above the deepest existing entry, e.g. `--output link/sub/out` with `link` → elsewhere — aborts generation with `E_UNSAFE_PATH` instead of following it. This applies to `--force` overwrites as well.
+- Before every planned write (`mkdir` of a skeleton subdirectory, create or `--force` overwrite of a file), every existing component of the planned path is re-checked with `lstat`, walking from the filesystem root down to the target; a symlink planted anywhere on that chain — including above the deepest existing entry, e.g. `--output link/sub/out` with `link` → elsewhere — aborts generation with `E_UNSAFE_PATH` instead of following it. Planned entries are inspected with `lstat` (never `existsSync`, which follows symlinks), so a symlink or broken symlink at a planned file or directory path is refused with `E_UNSAFE_PATH` — with or without `--force`, never silently skipped and never followed. This applies to `--force` overwrites as well.
+- Type conflicts surface a stable code: a file occupying a planned directory path or a directory occupying a planned file path fails with `E_TARGET_EXISTS` (exit 2) instead of a raw `EISDIR`/`EEXIST`.
 - Never overwrite an existing file without `--force` (idempotent re-runs skip existing files; `E_TARGET_EXISTS` is reserved for hard conflicts). Untracked files are never touched by `--force`; a symlink at a planned path is refused, never overwritten through.
 - `--dry-run` must not create files, start containers, call AI providers, or install packages.
 - Do not run package installation or application scripts automatically unless the user explicitly opts in. The CLI never spawns shells or child processes and never interpolates user input into command lines.
@@ -91,7 +92,7 @@ Implemented by the CLI (stable exit-code mapping in `packages/generator/lib/erro
 | Code | Exit code | Meaning |
 | --- | --- | --- |
 | `E_INVALID_STACK` | 1 | Unknown or malformed stack id |
-| `E_TARGET_EXISTS` | 2 | Reserved: hard target conflict (current overwrites are per-file skip/force) |
+| `E_TARGET_EXISTS` | 2 | Planned file/dir path occupied by an incompatible entry (directory where a file is planned, file where a directory is planned); reserved for hard target conflicts |
 | `E_UNSAFE_PATH` | 3 | Path traversal, filesystem root/home/repo-root output, symlink escape |
 | `E_CATALOG_INVALID` | 4 | Catalog unreadable or fails content rules (also surfaced as `E_COUNT_MISMATCH`, `E_ID_INVALID`, `E_ID_DUPLICATE`, `E_MATURITY_INVALID`) |
 | `E_USAGE` | 64 | Unknown command/option or missing required option |
@@ -110,7 +111,7 @@ Reserved for planned features (not yet emitted):
 - `E_VALIDATION_FAILED`
 - `E_PERMISSION_DENIED`
 
-Each error prints exactly one `CODE: message` line on stderr — the prefix is added once by `formatError` in `packages/generator/lib/errors.js`, the single source of truth that the CLI entrypoint imports for both formatting and exit-code mapping (unknown or missing codes exit as `E_IO`, 74). Messages carry a safe human-readable text and an actionable next step (e.g. "Run \"create-anything-ai list\" to see available stacks"), never secret values or stack traces by default.
+Each error prints exactly one `CODE: message` line on stderr — the prefix is added once by `formatError` in `packages/generator/lib/errors.js`, the single source of truth that the CLI entrypoint imports for both formatting and exit-code mapping. Codes outside the table (raw fs errors such as `EACCES`) are normalized to `E_IO` in both the printed message and the exit code (74). Messages carry a safe human-readable text and an actionable next step (e.g. "Run \"create-anything-ai list\" to see available stacks"), never secret values or stack traces by default.
 
 ## 8. Known gaps (as of this revision)
 

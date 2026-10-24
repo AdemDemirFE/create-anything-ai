@@ -42,6 +42,12 @@ describe('formatError (single source used by the CLI entrypoint)', () => {
     assert.equal(formatError(errorWithCode('E_UNSAFE_PATH', 'nope')), 'E_UNSAFE_PATH: nope');
   });
 
+  test('normalizes unknown fs error codes to E_IO', () => {
+    const fsError = new Error('permission denied');
+    fsError.code = 'EACCES';
+    assert.equal(formatError(fsError), 'E_IO: permission denied');
+  });
+
   test('falls back to E_IO prefix and never includes a stack trace', () => {
     const out = formatError(new Error('boom'));
     assert.equal(out, 'E_IO: boom');
