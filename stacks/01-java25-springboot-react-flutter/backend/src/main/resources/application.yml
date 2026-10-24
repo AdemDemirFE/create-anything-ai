@@ -28,6 +28,10 @@ server:
 app:
   demo:
     enabled: false      # dev-only demo mode; must stay false in production
+  cors:
+    # Comma-separated allowlist; override via the ALLOWED_ORIGINS env var
+    # (documented in .env.example). Bound into SecurityConfig.
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173
 
 management:
   endpoints:

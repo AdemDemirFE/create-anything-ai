@@ -41,10 +41,17 @@ class ApiClient {
 
   String? get currentSessionCookie => _sessionCookie;
 
+  static const _csrfCookieHeader = 'XSRF-TOKEN';
+  String? _csrfToken;
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         if (_sessionCookie != null) 'Cookie': '$_sessionCookieHeader=$_sessionCookie',
+        // Double-submit CSRF: echo the token captured from the last response.
+        // register/login are exempt server-side; sending it always is simpler
+        // and harmless.
+        if (_csrfToken != null) 'X-XSRF-TOKEN': _csrfToken!,
       };
 
   Future<Map<String, dynamic>> _send(String method, String path, {Object? body}) async {
@@ -62,10 +69,19 @@ class ApiClient {
     final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
 
     final setCookies = response.headers['set-cookie'];
-    if (setCookies != null && setCookies.contains('$_sessionCookieHeader=')) {
-      final match = RegExp('$_sessionCookieHeader=([^;]+)').firstMatch(setCookies);
-      if (match != null) {
-        _sessionCookie = match.group(1);
+    if (setCookies != null) {
+      if (setCookies.contains('$_sessionCookieHeader=')) {
+        final match = RegExp('$_sessionCookieHeader=([^;]+)').firstMatch(setCookies);
+        if (match != null) {
+          _sessionCookie = match.group(1);
+        }
+      }
+      // Track the rotating CSRF token so POSTs can echo it (X-XSRF-TOKEN).
+      if (setCookies.contains('$_csrfCookieHeader=')) {
+        final match = RegExp('$_csrfCookieHeader=([^;]+)').firstMatch(setCookies);
+        if (match != null) {
+          _csrfToken = match.group(1);
+        }
       }
     }
 
@@ -93,6 +109,7 @@ class ApiClient {
       await _send('POST', '/logout');
     } finally {
       _sessionCookie = null;
+      _csrfToken = null;
     }
   }
 

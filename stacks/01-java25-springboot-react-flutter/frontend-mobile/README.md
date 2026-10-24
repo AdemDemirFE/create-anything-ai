@@ -33,6 +33,10 @@ test/
   `/api/v1/login`. It is captured from `Set-Cookie`, replayed on every request,
   persisted with `flutter_secure_storage` (Keychain/Keystore), and cleared on
   logout. It is never stored in plain preferences.
+- CSRF: the backend re-issues an `XSRF-TOKEN` cookie on every response; the
+  client captures it and echoes it as the `X-XSRF-TOKEN` header on POST calls
+  (register/login are exempt server-side). 429 responses (login throttle) map
+  to `ApiError(statusCode: 429)`.
 - All responses use the repository envelope; `ApiError` carries the stable
   error codes documented in `../ARCHITECTURE.md` §3.
 - 401 on any protected call routes back to `LoginScreen`.

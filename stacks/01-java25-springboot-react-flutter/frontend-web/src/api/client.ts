@@ -38,14 +38,30 @@ export class ApiError extends Error {
 
 const API_BASE = '/api/v1'
 
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<Envelope<T>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...((init.headers as Record<string, string>) ?? {}),
+  }
+  // Double-submit CSRF: echo the XSRF-TOKEN cookie on state-changing calls.
+  // The backend re-issues the cookie on every response, so the value is
+  // always current. register/login are CSRF-exempt server-side, but sending
+  // the header unconditionally is harmless and simpler.
+  const method = (init.method ?? 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD') {
+    const token = readCookie('XSRF-TOKEN')
+    if (token) headers['X-XSRF-TOKEN'] = token
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers,
     ...init,
   })
 

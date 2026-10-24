@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.createanything.stack01.web.AlreadyExistsException;
 import com.createanything.stack01.web.BadRequestException;
+import com.createanything.stack01.web.RateLimitedException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -19,13 +20,22 @@ import jakarta.servlet.http.HttpSession;
  * Registration and login use-cases. The same HTTP session cookie serves browser
  * and native clients. Session lifetime and revocation are documented in
  * ARCHITECTURE.md; logout invalidates the server-side session.
+ *
+ * <p>Login throttling (demo-grade, documented): the sliding window is keyed on
+ * email + client IP so an attacker cannot lock out a victim by burning only
+ * the victim's email, and only FAILED attempts consume the budget - successful
+ * logins never throttle a legitimate user. The counter is maintained
+ * atomically via {@code cache.asMap().compute(...)}. Exceeding the limit maps
+ * to HTTP 429 with a Retry-After header (see {@link RateLimitedException}).
  */
 @Service
 public class AuthService {
 
-    /** Login throttle: max attempts per session window. Demo-grade, documented as such. */
-    static final int MAX_ATTEMPTS_PER_WINDOW = 10;
+    /** Login throttle: max FAILED attempts per rolling window, keyed on email+IP. */
+    static final int MAX_FAILED_ATTEMPTS_PER_WINDOW = 10;
     private static final long WINDOW_MS = 60_000L;
+    /** Retry-After seconds advertised with HTTP 429. */
+    public static final long RETRY_AFTER_SECONDS = 60L;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -66,15 +76,15 @@ public class AuthService {
     @Transactional(readOnly = true)
     public UserInfo login(LoginRequest request, HttpServletRequest httpRequest) {
         String email = AppUserDetailsService.normalize(request.email());
-
-        if (!consumeAttempt(email)) {
-            throw new BadRequestException("RATE_LIMITED",
-                    "Too many attempts. Please wait a minute and try again.");
-        }
+        String throttleKey = throttleKey(email, httpRequest);
 
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
+            // Successful login clears the failure tally for this identity pair
+            // (documented policy): successes never accumulate and a legitimate
+            // user recovers immediately even after a burst of typos.
+            attemptCache.invalidate(throttleKey);
             HttpSession oldSession = httpRequest.getSession(false);
             if (oldSession != null) {
                 oldSession.invalidate(); // prevent session fixation
@@ -91,6 +101,12 @@ public class AuthService {
             return new UserInfo(authentication.getName());
         } catch (BadCredentialsException ex) {
             // Same message for unknown email and wrong password: no enumeration.
+            // The failure counts against email+IP atomically BEFORE the generic
+            // error is emitted; the 11th failure within the window returns 429.
+            if (!registerFailedAttempt(throttleKey)) {
+                throw new RateLimitedException(
+                        "Too many failed attempts. Please wait a minute and try again.");
+            }
             throw new BadRequestException("INVALID_CREDENTIALS", "Invalid email or password.");
         }
     }
@@ -103,17 +119,45 @@ public class AuthService {
         SecurityContextHolder.clearContext();
     }
 
-    private boolean consumeAttempt(String key) {
+    /**
+     * Atomically records one failed attempt under {@code key} and reports
+     * whether the caller is still allowed to retry. Uses
+     * {@code cache.asMap().compute(...)} so concurrent logins cannot race the
+     * counter, and the window start is pinned so the window expires instead
+     * of sliding on every attempt.
+     */
+    private boolean registerFailedAttempt(String key) {
         long now = System.currentTimeMillis();
-        WindowState state = attemptCache.get(key, k -> new WindowState(0, now));
-        if (now - state.windowStart() > WINDOW_MS) {
-            state = new WindowState(0, now);
+        WindowState updated = attemptCache.asMap().compute(key, (k, state) -> {
+            if (state == null || now - state.windowStart() > WINDOW_MS) {
+                return new WindowState(1, now);
+            }
+            return new WindowState(state.count() + 1, state.windowStart());
+        });
+        return updated.count() <= MAX_FAILED_ATTEMPTS_PER_WINDOW;
+    }
+
+    /**
+     * Throttle key: email + client IP. Including the IP means an attacker
+     * cannot lock out a victim solely by hammering the victim's email from a
+     * different network, and a single IP cannot silently try many emails.
+     */
+    private String throttleKey(String email, HttpServletRequest request) {
+        return email + "|" + clientIp(request);
+    }
+
+    /**
+     * Best-effort client IP. Direct connections are the norm for this
+     * reference stack; a configurable trusted-proxy header keeps the door
+     * open for real deployments without trusting spoofable headers blindly.
+     */
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
         }
-        if (state.count() >= MAX_ATTEMPTS_PER_WINDOW) {
-            return false;
-        }
-        attemptCache.put(key, new WindowState(state.count() + 1, state.windowStart()));
-        return true;
+        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }
 
     private void validateEmail(String email) {

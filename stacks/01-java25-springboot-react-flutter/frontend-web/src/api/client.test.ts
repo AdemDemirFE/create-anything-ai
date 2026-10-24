@@ -77,4 +77,31 @@ describe('api client envelope handling', () => {
     const [, init] = fetchMock.mock.calls[0]
     expect(JSON.parse(init.body)).toEqual({ algorithm: 'fizzbuzz', input: '1' })
   })
+
+  it('echoes the XSRF-TOKEN cookie on state-changing requests', async () => {
+    document.cookie = 'XSRF-TOKEN=test-csrf-token; Path=/'
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ success: true, data: null, error: null, meta: { timestamp: 't', request_id: 'r4' } }),
+    )
+
+    await api.logout()
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.method).toBe('POST')
+    expect(init.headers['X-XSRF-TOKEN']).toBe('test-csrf-token')
+    document.cookie = 'XSRF-TOKEN=; Max-Age=0; Path=/'
+  })
+
+  it('does not attach the CSRF header to GET requests', async () => {
+    document.cookie = 'XSRF-TOKEN=should-not-appear; Path=/'
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ success: true, data: { email: 'a@b.co' }, error: null, meta: { timestamp: 't', request_id: 'r5' } }),
+    )
+
+    await api.me()
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers['X-XSRF-TOKEN']).toBeUndefined()
+    document.cookie = 'XSRF-TOKEN=; Max-Age=0; Path=/'
+  })
 })

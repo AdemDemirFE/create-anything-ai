@@ -29,15 +29,16 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.2'
 mvn test
 ```
 
-Result: **BUILD SUCCESS, EXIT 0** — 22 tests (last full run after the review
-fix for prod cookie hardening property paths).
+Result: **BUILD SUCCESS, EXIT 0** — 25 tests (last full run after the second
+review round: cookie property paths, CSRF narrowing, CORS binding, throttle
+rework).
 
 ```text
 [INFO] Tests run: 7,  Failures: 0, Errors: 0, Skipped: 0 -- AlgorithmEngineTest
-[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- EnvelopeContractTest
 [INFO] Tests run: 2,  Failures: 0, Errors: 0, Skipped: 0 -- ProdCookieConfigTest
-[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -79,6 +80,19 @@ Issues found and fixed during real runs (all resolved, suite green):
    `server.max-http-request-header-size`. Both moved to the correct
    namespaces; `ProdCookieConfigTest` (2 tests) now asserts the YAML structure
    and fails if the nesting regresses (mutation-checked).
+6. Review fixes (2nd round, 5 threads): (a) H2 console dev-profile detection
+   now uses injected `Environment.acceptsProfiles` (the JVM system property
+   is not set when the profile comes from env/yml); (b) CSRF exemption
+   narrowed to register/login only — all other state-changing calls must echo
+   XSRF-TOKEN (CsrfCookieFilter re-issues the cookie; unauthenticated callers
+   get 401, authenticated-but-silent get 403, both test-asserted); web and
+   mobile clients updated to echo the token; (c) `ALLOWED_ORIGINS` is now
+   really bound via `app.cors.allowed-origins` `@Value`; (d) login throttle
+   reworked: keyed on email+client-IP, counts only FAILED attempts, atomic
+   `cache.asMap().compute`, pinned window (no sliding), success clears the
+   tally, and exceeding the limit returns **HTTP 429 + Retry-After: 60**
+   (was 400). Backend suite grew to 25 tests (429 coverage, success-does-not-
+   throttle coverage, CSRF-silent-403 coverage), web to 13 (CSRF echo).
 
 ## 3. Web — `npm test` + build (REAL, PASSED)
 
@@ -95,7 +109,7 @@ npx.cmd tsc --noEmit     # type check
 Results:
 
 ```text
-npm.cmd test   → Test Files 3 passed (3), Tests 11 passed (11), EXIT 0
+npm.cmd test   → Test Files 3 passed (3), Tests 13 passed (13), EXIT 0
 npm.cmd run build → ✓ 43 modules transformed, dist/ emitted, EXIT 0
 npx.cmd tsc --noEmit → EXIT 0 (clean)
 ```

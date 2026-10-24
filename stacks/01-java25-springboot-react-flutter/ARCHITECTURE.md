@@ -95,17 +95,27 @@ The correlation id is also returned in the `X-Request-Id` header.
 - **Passwords:** BCrypt via Spring Security's `BCryptPasswordEncoder`; hashes
   are never returned by any endpoint; email is lowercased and unique at the
   persistence layer.
-- **CSRF strategy (documented deviation):** CSRF is disabled for `/api/**`.
-  Rationale: the API is consumed by a browser SPA and native clients; cross-site
-  browser POSTs are blocked by SameSite=Lax session cookies plus a strict CORS
-  allowlist (localhost:5173/4173 only, credentials allowed). Keeping the
-  double-submit cookie filter on the API would only convert legitimate
-  unauthenticated requests from 401 to 403 and complicate the SPA for no added
-  protection in this configuration. Non-API paths keep CSRF enabled. This is a
-  deliberate, tested decision — not an omission.
-- **Rate limiting:** login attempts are throttled per email
-  (10/minute, in-process Caffeine cache). This is demo-grade and documented as
-  such; production deployments should enforce limits at the edge/proxy.
+- **CSRF strategy (double-submit cookie, narrowed exemption):** the
+  XSRF-TOKEN cookie must be echoed as X-XSRF-TOKEN on every state-changing API
+  call EXCEPT `/api/v1/register` and `/api/v1/login`. Those two are exempt
+  because they are pre-session endpoints: register has no session to ride a
+  cross-site request with, and login-CSRF (forcing a victim to log into the
+  attacker's account) is a low-impact risk for this reference app — the
+  trade-off is deliberate and reviewed. The token cookie is re-issued on every
+  request (`CsrfCookieFilter`), so the SPA/mobile client always has a current
+  value. An authenticated caller missing the echo gets 403; an unauthenticated
+  caller gets the clean 401 (both asserted by integration tests).
+- **Rate limiting:** FAILED login attempts are throttled per email+client-IP
+  (10 per 60s rolling window, in-process Caffeine cache, atomic
+  `cache.asMap().compute`). Successes never count, and a successful login
+  clears the tally for that identity pair. Exceeding the limit returns
+  **HTTP 429** with a `Retry-After: 60` header. Keying on email+IP prevents a
+  pure email-based denial-of-service against a victim. This is demo-grade and
+  documented as such; production deployments should enforce limits at the
+  edge/proxy.
+- **CORS:** origins come from `app.cors.allowed-origins` (comma-separated;
+  default `localhost:5173/4173`), overridable via the `ALLOWED_ORIGINS` env
+  var — wired through `@Value`, so non-localhost deployments can enable CORS.
 - **Demo mode:** `app.demo.enabled=true` (default false, dev only) returns a
   fixed demo payload from `/api/v1/home` **without** creating a session or
   bypassing authorization. It never substitutes real auth, and the `prod`

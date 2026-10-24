@@ -47,6 +47,20 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage(), List.of(), request);
     }
 
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<ApiResponse<Void>> onRateLimited(RateLimitedException ex,
+            HttpServletRequest request) {
+        String requestId = request.getHeader("X-Request-Id");
+        ApiResponse<Void> body = ApiResponse.error(HttpStatus.TOO_MANY_REQUESTS, ex.getCode(),
+                ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("X-Request-Id", requestId != null ? requestId : body.meta().request_id())
+                // Retry-After advertised in seconds (AuthService.RETRY_AFTER_SECONDS).
+                .header("Retry-After", String.valueOf(
+                        com.createanything.stack01.auth.AuthService.RETRY_AFTER_SECONDS))
+                .body(body);
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> onNotFound(NoResourceFoundException ex,
             HttpServletRequest request) {

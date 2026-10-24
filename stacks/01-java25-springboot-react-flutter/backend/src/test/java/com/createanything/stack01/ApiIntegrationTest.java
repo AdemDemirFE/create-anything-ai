@@ -58,6 +58,30 @@ class ApiIntegrationTest {
         return headers;
     }
 
+    /**
+     * Performs login and returns headers carrying the session cookie AND the
+     * XSRF-TOKEN echo (required for authenticated state-changing calls since
+     * the CSRF exemption was narrowed to register/login).
+     */
+    private HttpHeaders loginAndBuildHeaders(String email, String password) {
+        var login = post("/api/v1/login", Map.of("email", email, "password", password),
+                jsonHeaders());
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        HttpHeaders headers = jsonHeaders();
+        login.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, List.of())
+                .forEach(c -> headers.add(HttpHeaders.COOKIE, c.split(";")[0]));
+        // Echo the double-submit CSRF pair issued alongside the session cookie.
+        login.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, List.of()).stream()
+                .filter(c -> c.startsWith("XSRF-TOKEN="))
+                .forEach(c -> headers.add("X-XSRF-TOKEN", cookieValue(c)));
+        return headers;
+    }
+
+    private static String cookieValue(String setCookie) {
+        String pair = setCookie.split(";", 2)[0];
+        return pair.substring(pair.indexOf('=') + 1);
+    }
+
     @Test
     void registerCreatesAccountAndReturnsEnvelope() {
         var response = post("/api/v1/register",
@@ -150,6 +174,52 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void eleventhFailedLoginIsRateLimitedWith429AndRetryAfter() {
+        post("/api/v1/register", Map.of("email", "throttle@example.com", "password", "CorrectHorse1"),
+                jsonHeaders());
+
+        org.springframework.http.HttpStatusCode last = null;
+        Map<String, Object> lastBody = null;
+        List<String> retryAfter = null;
+        for (int attempt = 1; attempt <= 11; attempt++) {
+            var response = post("/api/v1/login",
+                    Map.of("email", "throttle@example.com", "password", "WrongPass99"),
+                    jsonHeaders());
+            last = response.getStatusCode();
+            lastBody = response.getBody();
+            retryAfter = response.getHeaders().get(HttpHeaders.RETRY_AFTER);
+        }
+
+        // Ten failures map to 400 INVALID_CREDENTIALS; the 11th is throttled.
+        assertThat(last).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> error = (Map<String, Object>) lastBody.get("error");
+        assertThat(error.get("code")).isEqualTo("RATE_LIMITED");
+        assertThat(retryAfter).as("429 must advertise Retry-After").isNotNull();
+
+        // Policy (documented): a SUCCESSFUL login clears the failure tally, so
+        // the legitimate user recovers immediately after proving credentials.
+        var correct = post("/api/v1/login",
+                Map.of("email", "throttle@example.com", "password", "CorrectHorse1"), jsonHeaders());
+        assertThat(correct.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void successfulLoginsDoNotConsumeTheThrottleBudget() {
+        post("/api/v1/register", Map.of("email", "happy@example.com", "password", "CorrectHorse1"),
+                jsonHeaders());
+
+        // 12 successful logins: none may be throttled.
+        for (int attempt = 1; attempt <= 12; attempt++) {
+            var response = post("/api/v1/login",
+                    Map.of("email", "happy@example.com", "password", "CorrectHorse1"),
+                    jsonHeaders());
+            assertThat(response.getStatusCode()).as("attempt " + attempt)
+                    .isEqualTo(HttpStatus.OK);
+        }
+    }
+
+    @Test
     void protectedEndpointsRejectUnauthenticatedRequests() {
         var home = get("/api/v1/home", jsonHeaders());
         var algo = post("/api/v1/algorithm/run",
@@ -166,11 +236,7 @@ class ApiIntegrationTest {
     void algorithmRunsFizzBuzzWithMeasuredDurationAndComplexity() {
         post("/api/v1/register", Map.of("email", "dave@example.com", "password", "CorrectHorse1"),
                 jsonHeaders());
-        var login = post("/api/v1/login", Map.of("email", "dave@example.com", "password", "CorrectHorse1"),
-                jsonHeaders());
-        HttpHeaders headers = jsonHeaders();
-        login.getHeaders().get(HttpHeaders.SET_COOKIE)
-                .forEach(c -> headers.add(HttpHeaders.COOKIE, c.split(";")[0]));
+        HttpHeaders headers = loginAndBuildHeaders("dave@example.com", "CorrectHorse1");
 
         var run = post("/api/v1/algorithm/run", Map.of("algorithm", "fizzbuzz", "input", "15"),
                 headers);
@@ -184,14 +250,27 @@ class ApiIntegrationTest {
     }
 
     @Test
-    void algorithmRejectsUnknownAlgorithmAndOversizedInput() {
-        post("/api/v1/register", Map.of("email", "eve@example.com", "password", "CorrectHorse1"),
+    void authenticatedAlgorithmRunWithoutCsrfTokenIsRejected() {
+        post("/api/v1/register", Map.of("email", "csrf@example.com", "password", "CorrectHorse1"),
                 jsonHeaders());
-        var login = post("/api/v1/login", Map.of("email", "eve@example.com", "password", "CorrectHorse1"),
+        var login = post("/api/v1/login", Map.of("email", "csrf@example.com", "password", "CorrectHorse1"),
                 jsonHeaders());
         HttpHeaders headers = jsonHeaders();
         login.getHeaders().get(HttpHeaders.SET_COOKIE)
                 .forEach(c -> headers.add(HttpHeaders.COOKIE, c.split(";")[0]));
+        // Deliberately NO X-XSRF-TOKEN echo.
+
+        var run = post("/api/v1/algorithm/run", Map.of("algorithm", "fizzbuzz", "input", "15"),
+                headers);
+        // Authenticated but CSRF-silent: 403 FORBIDDEN from the access-denied path.
+        assertThat(run.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void algorithmRejectsUnknownAlgorithmAndOversizedInput() {
+        post("/api/v1/register", Map.of("email", "eve@example.com", "password", "CorrectHorse1"),
+                jsonHeaders());
+        HttpHeaders headers = loginAndBuildHeaders("eve@example.com", "CorrectHorse1");
 
         var unknown = post("/api/v1/algorithm/run", Map.of("algorithm", "eval-user-code", "input", "x"),
                 headers);
@@ -217,6 +296,12 @@ class ApiIntegrationTest {
         HttpHeaders before = jsonHeaders();
         login.getHeaders().get(HttpHeaders.SET_COOKIE)
                 .forEach(c -> before.add(HttpHeaders.COOKIE, c.split(";")[0]));
+        login.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, List.of()).stream()
+                .filter(c -> c.startsWith("XSRF-TOKEN="))
+                .forEach(c -> {
+                    String pair = c.split(";", 2)[0];
+                    before.add("X-XSRF-TOKEN", pair.substring(pair.indexOf('=') + 1));
+                });
 
         var logout = post("/api/v1/logout", null, before);
         assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.OK);
