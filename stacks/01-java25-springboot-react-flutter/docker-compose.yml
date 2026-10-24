@@ -1,0 +1,80 @@
+# Stack 01 local services (PostgreSQL + Redis).
+#
+# STATUS: DECLARATIVE / UNVERIFIED - the Docker daemon was not running in the
+# implementation environment, so this file has never been executed. Healthchecks
+# follow the official image conventions; review before first real run.
+#
+# Design notes:
+# - Only the backend port (8080) is published. PostgreSQL (5432) and Redis
+#   (6379) are reachable only inside the compose network - no unnecessary host
+#   exposure (docs/QUALITY_GATES.md Gate C).
+# - Credentials come from .env (create it from .env.example). No reusable
+#   values are committed here; the :? syntax makes startup fail when a
+#   required variable is unset.
+# - Redis has no concrete consumer in the backend yet (no cache/session use);
+#   it is provisioned for the stack spec but unused by default.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?credentials come from .env}
+      POSTGRES_DB: ${POSTGRES_DB:-stack01}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-stack01}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - stack01
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?credentials come from .env}"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - stack01
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-stack01}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - stack01
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  stack01:
+    driver: bridge
