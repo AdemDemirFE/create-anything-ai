@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}CSRF failure — Stack 21{% endblock %}
+{% block content %}
+  <div class="mx-auto max-w-md rounded-lg border border-red-300 bg-red-50 p-6">
+    <h1 class="mb-2 text-lg font-semibold text-red-900">Request blocked</h1>
+    <p class="text-sm text-red-900">The form token was missing or invalid. Go back, reload the page, and try again.</p>
+  </div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Register — Stack 21{% endblock %}
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <h1 class="mb-6 text-2xl font-semibold">Create your account</h1>
+    {% include "fragments/register_form.html" %}
+    <p class="mt-4 text-sm text-slate-600">
+      Already have an account? <a class="text-slate-900 underline" href="{% url 'core:login' %}">Log in</a>.
+    </p>
+  </div>
+{% endblock %}
