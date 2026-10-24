@@ -1,18 +1,42 @@
 {
   "id": "08-supabase-react-vite",
-  "name": "Supabase / React / Vite",
+  "name": "Supabase (BaaS) / React / Vite",
   "category": "baas",
   "maturity": "proposed",
-  "description": "Proposed catalog entry 08. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "description": "BaaS paradigm contrast stack: no custom backend — a React 18 + Vite + TypeScript browser client talks directly to Supabase (GoTrue auth via @supabase/supabase-js v2, PostgREST data access) with the public anon key; PostgreSQL Row Level Security is the authorization layer (owner-only policies on the apps table, no anon access); a client-side data layer normalizes every provider response into a stable {ok,data,error,requestId} envelope; SQL migrations plus a static RLS policy auditor are included; RLS runtime behavior and Supabase-local runs are documented as unverified (no Docker daemon in the authoring environment).",
+  "web": {
+    "framework": "React",
+    "buildTool": "Vite",
+    "version": "18.3.1"
+  },
+  "data": [
+    "postgresql",
+    "rls"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
+  ],
+  "requires": [
+    "Node.js",
+    "Supabase project (hosted or local via Supabase CLI + Docker)"
+  ],
+  "versions": {
+    "node": "24",
+    "react": "18.3.1",
+    "vite": "7.3.7",
+    "typescript": "5.9.3",
+    "supabase-js": "2.118.0",
+    "vitest": "4.1.12"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
+    "manifest": true,
+    "unit": true,
     "integration": false,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25T00:00:00Z",
+    "evidencePath": "verification.md"
   }
 }
