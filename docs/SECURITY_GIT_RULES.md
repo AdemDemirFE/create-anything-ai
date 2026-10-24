@@ -19,7 +19,7 @@ Two workflows exist under `.github/workflows/`:
 
 - `ci.yml` (triggers: `pull_request` targeting `main`, `push` to `main`):
   - `validate-catalog` job: parses every JSON file under `stacks/` and `schemas/`, enforces catalog rules (exactly 40 stacks, unique and well-formed ids, unique `number` values within 1–40, `maturity` values from `catalog.maturityPolicy`, each stack id matching an existing `stacks/<id>/` directory containing `stack.json`), checks manifests against the structural rules of `schemas/stack-manifest.schema.json` (required keys, id pattern, maturity enum, boolean verification flags), and verifies the schema files referenced by the catalog contract exist.
-  - `generator-tests` job: runs `npm ci` + `npm test` in `packages/generator/`. The whole job is gated by `hashFiles('packages/generator/package.json') != ''`, so it is skipped cleanly while the generator package (owned by another task) does not exist yet.
+  - `generator-tests` job: runs `npm ci` + `npm test` in `packages/generator/`. A detection step checks for `packages/generator/package.json` and gates the setup/test steps on its output (GitHub Actions does not allow `hashFiles` in job-level `if`), so the job succeeds with those steps skipped while the generator package (owned by another task) does not exist yet.
   - `ci-summary` job: a single aggregating check that fails if any required job failed (skipped generator tests count as passing), which makes branch protection simple.
   - All jobs run with workflow-level `permissions: contents: read` and `persist-credentials: false`; no secrets are referenced, so fork pull requests are safe.
 - `audit-secrets.yml`: Gitleaks secret scanning (details in section 4).
@@ -114,7 +114,7 @@ Regex-only scanning is a useful extra guard, not a guarantee. False positives an
 - No allowlist/custom `gitleaks.toml` exists yet. If test fixtures ever trigger false positives, add a narrowly scoped `gitleaks.toml` with documented excludes instead of disabling rules globally.
 - The example pre-commit hook in section 5 is documentation only; no hook is installed in this repository yet.
 
-Verification status: the workflow file is syntax-checked locally, but it has **not yet been executed on GitHub Actions** (no CI run exists at the time of writing). Treat the secret-scanning gate as configured but not yet verified until a run completes successfully.
+Verification status: syntax-checked locally with PyYAML and actionlint 1.7.7, and verified by a real run on GitHub Actions on PR #2 (`Secret audit` job: success, "No secrets detected"). The weekly scheduled full-history path has not fired yet because the schedule trigger only starts after merge.
 
 ## 5. Example local pre-commit hook
 

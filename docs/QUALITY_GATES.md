@@ -26,7 +26,7 @@
 - Stack ID equals directory name.
 - Catalog references resolve.
 
-Automated today by the `validate-catalog` job in `.github/workflows/ci.yml`: catalog must contain exactly 40 stacks with unique well-formed ids, unique `number` values in 1–40, maturity values from `catalog.maturityPolicy`, a `stacks/<id>/` directory per id containing `stack.json`, and manifests matching the structural rules of `schemas/stack-manifest.schema.json`. Not yet automated: verification evidence files (Gate F) and cross-references beyond the checks listed in the workflow.
+Automated today by the `validate-catalog` job in `.github/workflows/ci.yml` (strict whenever the catalog exists; reports and skips during bootstrap when `stacks/`/`schemas/` are entirely absent): catalog must contain exactly 40 stacks with unique well-formed ids, unique `number` values in 1–40, maturity values from `catalog.maturityPolicy`, a `stacks/<id>/` directory per id containing `stack.json`, and manifests matching the structural rules of `schemas/stack-manifest.schema.json`. Not yet automated: verification evidence files (Gate F) and cross-references beyond the checks listed in the workflow.
 
 ### Gate B — Static validation
 - Markdown lint and link checks where configured.
@@ -107,8 +107,10 @@ Do not commit machine-specific paths, tokens, private logs, or sensitive environ
 
 The CI configuration described above was added in this repository, with these verification limits stated explicitly:
 
-- Workflow YAML files were syntax-validated locally (YAML parse). The catalog validation logic was exercised locally against a copy of `stacks/catalog.json` and the current schemas.
-- The workflows have **not yet been executed on GitHub Actions** at the time of writing; no successful CI run exists yet, so the gates above are configured but not yet verified end to end.
-- The `generator-tests` job is gated on `hashFiles('packages/generator/package.json') != ''` and has never executed because the generator package does not exist yet. When the package lands, its first run is the real verification of that job.
-- Gitleaks scanning depends on `gitleaks/gitleaks-action@v3`, which requires no license secret for personal-account repositories. Organization accounts must add a free `GITLEAKS_LICENSE` secret before the workflow can pass.
+- Workflow YAML files were validated locally with PyYAML (syntax parse) and `actionlint` 1.7.7 (expression/context checks; found and fixed an invalid job-level `hashFiles` usage).
+- The catalog validation logic was exercised locally against a copy of `stacks/catalog.json` and the current schemas, including negative tests with injected defects (bad maturity, out-of-range number, malformed id — all caught).
+- Real GitHub Actions runs on PR #2 verified: `validate-catalog` (success, bootstrap-tolerant path), `generator-tests` (success with setup/test steps correctly skipped while `packages/generator` is absent), `ci-summary` (success), and the Gitleaks `Secret audit` (success, no secrets detected).
+- The `validate-catalog` job is strict whenever `stacks/`/`schemas/` exist and only reports-and-skips when they are entirely absent (bootstrap phase). Once the catalog lands on `main`, the 40-stack rules enforce on every PR.
+- The `generator-tests` job has not executed `npm ci`/`npm test` yet because the generator package does not exist. When the package lands, its first run is the real verification of that job.
+- The weekly scheduled Gitleaks run has not fired yet; it starts after merge.
 - Branch protection rules (required status checks) are a repository-settings change outside this repository's files and have not been applied.
