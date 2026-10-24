@@ -1,0 +1,19 @@
+{
+  "name": "create-anything-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-stack open-source toolkit for generating, validating, and maintaining application starters.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "workspaces": [
+    "packages/generator"
+  ],
+  "scripts": {
+    "test": "node --test \"tests/generator/*.test.js\"",
+    "test:generator": "node --test \"tests/generator/*.test.js\"",
+    "generator": "node packages/generator/bin/create-anything-ai.js"
+  }
+}
