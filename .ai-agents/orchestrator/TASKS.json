@@ -6,7 +6,8 @@
       "id": "TASK-001",
       "title": "Repository Foundation",
       "worker": "worker-1",
-      "status": "in_progress",
+      "status": "review-requested",
+      "commit": "1eb9040",
       "branch": "feat/repository-foundation",
       "scope": {
         "owned_paths": [

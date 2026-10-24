@@ -138,7 +138,7 @@ Completion report:
 
 ## 7. Context and token efficiency
 
-- Read root `AGENTS.md` once per session; then read only task-relevant docs.
+- Read `.ai-agents/AGENTS.md` once per session; then read only task-relevant docs.
 - Give agents file paths and concise acceptance criteria, not the entire repository text.
 - Ask for a plan before implementation for tasks with more than five files.
 - Require a compact handoff report; do not ask every worker to summarize the entire codebase.
