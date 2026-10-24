@@ -123,15 +123,19 @@ function main(argv) {
     }
     const catalog = loadCatalogFromDisk(catalogPath);
     const stack = requireStack(catalog, stackId);
+    const cwd = process.cwd();
     const absOutput = assertCliOutputPolicy(options.output, {
-      cwd: process.cwd(),
+      cwd,
       // Protect the repository that owns the catalog from being used as output.
       repoRoot: path.resolve(catalogPath, '..', '..'),
     });
     const report = generateSkeleton(stack, absOutput, {
-      // The output directory itself is the write root; every planned path is
-      // re-checked to stay inside it. The catalog stays a read-only input.
-      allowedRoot: absOutput,
+      // Relative outputs must stay inside the cwd: containment is enforced
+      // against the cwd so a symlinked ancestor cannot carry the write
+      // outside the directory the user runs from. For absolute outputs the
+      // existing prefix is resolved (realpath) and trusted; only escapes
+      // BELOW it are refused. The catalog stays a read-only input.
+      allowedRoot: path.isAbsolute(String(options.output).trim()) ? absOutput : cwd,
       force: options.force === true,
       dryRun: options.dryRun === true,
     });

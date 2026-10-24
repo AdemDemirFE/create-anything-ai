@@ -253,4 +253,71 @@ describe('CLI: generate', () => {
       tmp.cleanup();
     }
   });
+
+  test('symlink ancestor inside cwd pointing OUTSIDE cwd is refused end-to-end (E_UNSAFE_PATH)', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const catalogPath = writeFixtureCatalog(tmp.path, makeCatalog());
+      const work = path.join(tmp.path, 'work');
+      fs.mkdirSync(work);
+      // A symlink inside the cwd that resolves OUTSIDE the cwd: a relative
+      // --output through it must be refused (containment is enforced against
+      // the cwd for relative outputs) and nothing may be written outside.
+      const outside = path.join(path.dirname(tmp.path), `cai-cli-outside-${process.pid}`);
+      fs.mkdirSync(outside, { recursive: true });
+      const link = path.join(work, 'evil-link');
+      let made = false;
+      try {
+        fs.symlinkSync(outside, link, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+      try {
+        const { status, stderr } = runCli(
+          ['--catalog', catalogPath, 'generate', '01-fixture-stack-1', '--output', path.join('evil-link', 'proj')],
+          { cwd: work },
+        );
+        assert.equal(status, 3);
+        assert.match(stderr, /E_UNSAFE_PATH/);
+        const outsideEntries = fs.existsSync(outside) ? fs.readdirSync(outside) : [];
+        assert.deepEqual(outsideEntries, [], 'nothing may be written outside cwd through the symlink');
+      } finally {
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('benign symlinked ancestor is allowed for absolute outputs (macOS /tmp style)', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const catalogPath = writeFixtureCatalog(tmp.path, makeCatalog());
+      // macOS /tmp -> /private/tmp analogue: the output sits BEHIND a
+      // symlinked ancestor; that must stay allowed and the files must land
+      // in the real destination behind the link.
+      const realBase = path.join(tmp.path, 'private-tmp');
+      fs.mkdirSync(realBase, { recursive: true });
+      const linkBase = path.join(tmp.path, 'tmp-link');
+      let made = false;
+      try {
+        fs.symlinkSync(realBase, linkBase, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+      const out = path.join(linkBase, 'proj');
+      const { status, stdout } = runCli(['--catalog', catalogPath, 'generate', '05-fixture-stack-5', '--output', out]);
+      assert.equal(status, 0);
+      assert.match(stdout, /created: README\.md/);
+      assert.ok(fs.existsSync(path.join(realBase, 'proj', 'stack.json')), 'files land behind the link');
+    } finally {
+      tmp.cleanup();
+    }
+  });
 });
