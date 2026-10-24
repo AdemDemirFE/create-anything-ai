@@ -1,0 +1,16 @@
+"""Stable error codes shared by the API and its clients.
+
+These strings are part of the frozen contract; changing one requires
+updating backend, web client, and tests together.
+"""
+
+VALIDATION_ERROR = "VALIDATION_ERROR"
+EMAIL_TAKEN = "EMAIL_TAKEN"
+INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+RATE_LIMITED = "RATE_LIMITED"
+UNAUTHORIZED = "UNAUTHORIZED"
+UNKNOWN_ALGORITHM = "UNKNOWN_ALGORITHM"
+INPUT_TOO_LARGE = "INPUT_TOO_LARGE"
+INVALID_INPUT = "INVALID_INPUT"
+NOT_FOUND = "NOT_FOUND"
+INTERNAL_ERROR = "INTERNAL_ERROR"

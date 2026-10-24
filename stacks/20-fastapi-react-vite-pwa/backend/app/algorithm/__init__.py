@@ -1,0 +1,1 @@
+"""Fixed-catalog algorithm workbench."""
