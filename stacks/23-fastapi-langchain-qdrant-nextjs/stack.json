@@ -1,18 +1,55 @@
 {
   "id": "23-fastapi-langchain-qdrant-nextjs",
-  "name": "Fastapi / Langchain / Qdrant / Nextjs",
+  "name": "FastAPI / LangChain / Qdrant / Next.js",
   "category": "ai-native",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 23. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "AI-native stack: FastAPI backend (cookie sessions, bcrypt off-loop, login throttle, section-7 envelope) with a configurable RAG pipeline - LangChain deterministic fake embeddings or OpenAI, local storage retriever or real Qdrant client (in-memory mode tested) - plus document upload with size/type limits and JSON-only chat (no streaming); Next.js 14 + TypeScript web app with the four-screen journey and polling chat; Docker/e2e and live Qdrant server not exercised.",
+  "backend": {
+    "language": "Python",
+    "framework": "FastAPI",
+    "version": "0.129.0"
+  },
+  "web": {
+    "framework": "Next.js",
+    "buildTool": "next build",
+    "version": "14.2.35"
+  },
+  "data": [
+    "in-memory",
+    "local-file-storage",
+    "qdrant-in-memory"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
+  ],
+  "requires": [
+    "Python",
+    "Node.js"
+  ],
+  "versions": {
+    "python": "3.13.2",
+    "fastapi": "0.129.0",
+    "uvicorn": "0.41.0",
+    "bcrypt": "4.3.0",
+    "langchain-core": "1.7.0",
+    "langchain-text-splitters": "1.1.3",
+    "qdrant-client": "1.20.0",
+    "node": "24",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "typescript": "5.9.3",
+    "pytest": "9.1.1",
+    "vitest": "4.0.4"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-24T21:55:00Z",
+    "evidencePath": "verification.md"
   }
 }

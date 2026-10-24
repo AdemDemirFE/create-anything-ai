@@ -5,9 +5,14 @@ stack runs with `pip install -r requirements.txt` alone. Data is lost on
 restart, which is acceptable for a demo and documented in ARCHITECTURE.md.
 A SQLite swap-in would keep the same interface (see README).
 
-All mutations are guarded by a single re-entrant lock; request handlers run
-on the event loop thread for sync endpoints, but the lock also protects
-against future async/concurrent usage.
+All mutations are guarded by a single re-entrant lock; handlers may call
+from the event loop thread or from worker threads (bcrypt itself runs in a
+dedicated hashing executor), and the lock makes both safe.
+
+Expired sessions are removed two ways: lazily when presented, and
+opportunistically — every session-store activity runs a coalesced sweep
+(at most once per `PURGE_INTERVAL_SECONDS`), so sessions that are never
+presented again do not linger until process exit.
 """
 
 from __future__ import annotations
@@ -16,6 +21,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 from uuid import uuid4
+
+# Minimum spacing between opportunistic expired-session sweeps (seconds).
+# A sweep runs under the store lock, so coalescing keeps the common
+# per-request path to a single clock comparison. One minute matches the
+# throttle window granularity of this reference stack.
+PURGE_INTERVAL_SECONDS = 60.0
 
 
 @dataclass
@@ -48,6 +59,10 @@ class MemoryStore:
         self._users_by_id: dict[str, User] = {}
         self._sessions: dict[str, Session] = {}
         self._throttle: dict[str, ThrottleState] = {}
+        # Coalescing anchor for the opportunistic expired-session sweep:
+        # a sweep is due when time.time() >= this. 0 forces one sweep on
+        # the first store activity after process start.
+        self._next_purge_at: float = 0.0
 
     # --- users ------------------------------------------------------------
     def get_user_by_email(self, email: str) -> User | None:
@@ -71,6 +86,7 @@ class MemoryStore:
     # --- sessions ----------------------------------------------------------
     def create_session(self, token_hash: str, user_id: str, ttl_seconds: int) -> Session:
         with self._lock:
+            self._maybe_purge()
             now = time.time()
             session = Session(
                 token_hash=token_hash,
@@ -84,6 +100,7 @@ class MemoryStore:
 
     def get_session(self, token_hash: str) -> Session | None:
         with self._lock:
+            self._maybe_purge()
             session = self._sessions.get(token_hash)
             if session is None:
                 return None
@@ -116,6 +133,38 @@ class MemoryStore:
     def delete_session(self, token_hash: str) -> None:
         with self._lock:
             self._sessions.pop(token_hash, None)
+
+    # --- expired-session purge ----------------------------------------------
+    def _maybe_purge(self) -> None:
+        """Opportunistic sweep of expired sessions (caller holds the lock).
+
+        Coalesced: the actual scan runs at most once per
+        PURGE_INTERVAL_SECONDS, so per-request cost is one clock read in the
+        common case and the sweep amortizes O(sessions) work over time.
+        Runs under the store lock; the scan is O(n) over sessions, which is
+        fine for the bounded session population of this in-memory reference
+        store.
+        """
+        now = time.time()
+        if now < self._next_purge_at:
+            return
+        self._next_purge_at = now + PURGE_INTERVAL_SECONDS
+        expired = [h for h, s in self._sessions.items() if s.expires_at < now]
+        for token_hash in expired:
+            del self._sessions[token_hash]
+
+    def purge_expired_sessions(self) -> int:
+        """Force a sweep now; returns how many expired sessions were removed.
+
+        Production callers do not need this (the opportunistic sweep covers
+        it); exposed for ops scripts and tests.
+        """
+        with self._lock:
+            now = time.time()
+            expired = [h for h, s in self._sessions.items() if s.expires_at < now]
+            for token_hash in expired:
+                del self._sessions[token_hash]
+            return len(expired)
 
     # --- login throttle -----------------------------------------------------
     @staticmethod
@@ -161,6 +210,7 @@ class MemoryStore:
             self._users_by_id.clear()
             self._sessions.clear()
             self._throttle.clear()
+            self._next_purge_at = 0.0
 
 
 STORE = MemoryStore()
