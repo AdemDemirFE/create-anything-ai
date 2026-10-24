@@ -84,24 +84,14 @@ func Load(fsys fs.FS) (*template.Template, error) {
 	}).ParseFS(fsys, "templates/*.html")
 }
 
-// trimFloat renders milliseconds with ONE decimal, correctly rounded:
-// 2.3 -> "2.3", not "2.2".
+// trimFloat renders milliseconds with ONE decimal, correctly rounded by
+// strconv's decimal conversion: 2.3 -> "2.3", not "2.2".
 func trimFloat(ms float64) string {
-	// Direct one-step formatting, as reviewed: strconv.FormatFloat performs
-	// the correctly-rounded decimal conversion itself (2.3 -> "2.3",
-	// 0.7 -> "0.7", 123.456 -> "123.5"); no intermediate math.Round needed.
 	s := strconv.FormatFloat(ms, 'f', 1, 64)
 	if s == "-0.0" {
 		return "0.0" // normalize the negative-zero artifact
 	}
 	return s
-}
-
-// formatOneDecimal formats v with exactly one decimal via strconv's
-// correctly-rounded decimal conversion. Kept as a named function because
-// the review thread references it; trimFloat is its only caller.
-func formatOneDecimal(v float64) string {
-	return trimFloat(v)
 }
 
 // currentYear is used by the footer.
