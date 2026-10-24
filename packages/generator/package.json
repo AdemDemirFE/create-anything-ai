@@ -1,0 +1,25 @@
+{
+  "name": "@create-anything-ai/generator",
+  "version": "0.1.0",
+  "description": "Stack catalog CLI for Create Anything AI: list, validate, generate, status.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "create-anything-ai": "bin/create-anything-ai.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test ../../tests/generator/"
+  },
+  "exports": {
+    ".": "./lib/index.js"
+  }
+}
