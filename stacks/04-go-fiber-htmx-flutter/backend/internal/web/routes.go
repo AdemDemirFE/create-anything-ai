@@ -17,6 +17,7 @@ package web
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -27,8 +28,8 @@ import (
 
 // Routes carries web dependencies.
 type Routes struct {
-	Auth  *auth.Service
-	Tmpl  *Templates
+	Auth          *auth.Service
+	Tmpl          *Templates
 	SecureCookies bool
 }
 
@@ -209,10 +210,20 @@ func (r *Routes) AlgorithmRun(c fiber.Ctx) error {
 }
 
 // renderAuthError maps auth errors to form redisplay (visible errors).
+//
+// Status contract mirrors the JSON API: rate limiting is 429 + Retry-After
+// (not 422) so clients get one consistent throttle signal; every other
+// auth failure re-renders the form with 422 and a visible message.
 func (r *Routes) renderAuthError(c fiber.Ctx, err error, form string) error {
 	data := FormData{Email: c.FormValue("email")}
+	status := fiber.StatusUnprocessableEntity
 	var ve *auth.ValidationError
 	switch {
+	case errors.Is(err, auth.ErrRateLimited):
+		status = fiber.StatusTooManyRequests
+		data.Error = "Too many failed attempts. Please wait a minute and try again."
+		// Retry-After accompanies the 429 in both htmx and full-page mode.
+		c.Set("Retry-After", strconv.Itoa(r.Auth.RetryAfterSeconds()))
 	case errors.As(err, &ve):
 		data.FieldErrors = map[string]string{}
 		for _, f := range ve.Fields {
@@ -226,21 +237,18 @@ func (r *Routes) renderAuthError(c fiber.Ctx, err error, form string) error {
 		data.Error = "Please fix the highlighted fields."
 	case errors.Is(err, auth.ErrEmailTaken):
 		data.Error = "An account with this email already exists."
-	case errors.Is(err, auth.ErrRateLimited):
-		data.Error = "Too many failed attempts. Please wait a minute and try again."
-		if isHTMX(c) {
-			c.Set("Retry-After", itoa(r.Auth.RetryAfterSeconds()))
-		}
 	case errors.Is(err, auth.ErrInvalidCreds):
 		data.Error = "Invalid email or password."
 	default:
 		data.Error = "An unexpected error occurred. Please try again."
 	}
 
+	// The 429 fragment/page body is identical to other auth failures — the
+	// distinguishing signal is the status code plus the Retry-After header.
 	if isHTMX(c) {
-		return renderPage(c, r.Tmpl.Form, data, fiber.StatusUnprocessableEntity)
+		return renderPage(c, r.Tmpl.Form, data, status)
 	}
-	return r.renderFormFullPage(c, form, data, fiber.StatusUnprocessableEntity)
+	return r.renderFormFullPage(c, form, data, status)
 }
 
 // renderRunError maps algorithm errors to the workbench screens.

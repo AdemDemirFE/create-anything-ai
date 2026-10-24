@@ -181,7 +181,9 @@ func TestWebFormErrorsAreVisible(t *testing.T) {
 }
 
 // TestWebThrottledLoginShowsError asserts the web surface of 429: after
-// burning the failed-attempt budget, the form shows the rate-limit error.
+// burning the failed-attempt budget, the WEB path answers 429 + Retry-After
+// with the rate-limit error visible — mirroring the JSON API instead of the
+// API's 429 collapsing into the web path's 422.
 func TestWebThrottledLoginShowsError(t *testing.T) {
 	a := newApp(t)
 	form(t, a, "/register", url.Values{
@@ -196,11 +198,35 @@ func TestWebThrottledLoginShowsError(t *testing.T) {
 			"password": {"WrongPass123"},
 		}, nil)
 	}
-	if last.StatusCode != 422 {
-		t.Fatalf("throttled web login = %d, want 422 with error", last.StatusCode)
+	if last.StatusCode != 429 {
+		t.Fatalf("throttled web login = %d, want 429 (mirrors the JSON API)", last.StatusCode)
+	}
+	if last.Header.Get("Retry-After") == "" {
+		t.Error("429 must carry Retry-After on the web path too")
 	}
 	if !strings.Contains(last.Body, "Too many failed attempts") {
 		t.Error("rate-limit error must be visible on the web form")
+	}
+
+	// htmx mode: same status + header, error carried in the fragment.
+	hx := form(t, a, "/login", url.Values{
+		"email":    {"throttle@example.com"},
+		"password": {"WrongPass123"},
+	}, map[string]string{"HX-Request": "true"})
+	if hx.StatusCode != 429 {
+		t.Fatalf("throttled htmx login = %d, want 429", hx.StatusCode)
+	}
+	if hx.Header.Get("Retry-After") == "" {
+		t.Error("429 must carry Retry-After in htmx mode")
+	}
+	if strings.Contains(hx.Body, "<!DOCTYPE html>") {
+		t.Error("htmx 429 response must be a fragment, not a full page")
+	}
+	if !strings.Contains(hx.Body, `id="login-form"`) {
+		t.Error("429 fragment must carry the login-form id for the outerHTML swap")
+	}
+	if !strings.Contains(hx.Body, "Too many failed attempts") {
+		t.Error("rate-limit error must be visible inside the htmx fragment")
 	}
 }
 
@@ -251,7 +277,7 @@ func TestWebHtmxFragments(t *testing.T) {
 		"algorithm_id": {"reverse"},
 		"input":        {"abc"},
 	}, map[string]string{
-		"Cookie":    "STACK04_SESSION=" + session,
+		"Cookie":     "STACK04_SESSION=" + session,
 		"HX-Request": "true",
 	})
 	if run.StatusCode != 200 || !strings.Contains(run.Body, "cba") {

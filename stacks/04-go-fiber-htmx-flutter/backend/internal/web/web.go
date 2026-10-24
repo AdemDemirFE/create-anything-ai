@@ -11,6 +11,8 @@ package web
 import (
 	"html/template"
 	"io/fs"
+	"math"
+	"strconv"
 	"time"
 )
 
@@ -45,10 +47,10 @@ type AlgorithmView struct {
 // WorkbenchData is the model for the algorithm screen.
 type WorkbenchData struct {
 	PageData
-	Catalog   []AlgorithmView
-	Selected  string
-	Input     string
-	Result    *RunResultView
+	Catalog    []AlgorithmView
+	Selected   string
+	Input      string
+	Result     *RunResultView
 	CatalogErr string
 }
 
@@ -83,41 +85,22 @@ func Load(fsys fs.FS) (*template.Template, error) {
 	}).ParseFS(fsys, "templates/*.html")
 }
 
+// trimFloat renders milliseconds with ONE decimal, correctly rounded
+// (half away from zero), instead of truncating: 2.3 -> "2.3", not "2.2".
 func trimFloat(ms float64) string {
-	v := float64(int(ms*10+0.5)) / 10
-	s := formatOneDecimal(v)
-	return s
+	return formatOneDecimal(ms)
 }
 
+// formatOneDecimal formats v with exactly one decimal, correctly ROUNDED
+// (half away from zero) via strconv.FormatFloat: 2.3 -> "2.3", 2.25 ->
+// "2.3", 2.99 -> "3.0", 123.456 -> "123.5". The old hand-rolled formatter
+// truncated the fraction (float artifacts included), yielding 2.3 -> "2.2".
 func formatOneDecimal(v float64) string {
-	intPart := int(v)
-	dec := int((v - float64(intPart)) * 10)
-	if dec < 0 {
-		dec = -dec
+	r := math.Round(v*10) / 10
+	if r == 0 {
+		r = 0 // normalize -0 to 0
 	}
-	return itoa(intPart) + "." + itoa(dec)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
+	return strconv.FormatFloat(r, 'f', 1, 64)
 }
 
 // currentYear is used by the footer.

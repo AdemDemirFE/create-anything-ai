@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Swap even 4xx bodies so rate-limit/validation fragments stay visible -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"429","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>Algorithm workbench — Stack 04</title>
   <script src="/static/htmx.min.js" defer></script>
   <style>

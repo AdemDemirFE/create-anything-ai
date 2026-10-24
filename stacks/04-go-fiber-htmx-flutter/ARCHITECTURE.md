@@ -88,8 +88,13 @@ Error codes are stable strings: `VALIDATION_ERROR`, `EMAIL_TAKEN`,
 - Form errors are server-rendered and visible: field-level messages
   (`.field-error`), banner errors (`.error`, `role="alert"`), and the 401
   surface (page redirect to `/login?flash=login-required`; htmx requests get
-  `401 + HX-Redirect: /login`). Rate limiting shows the wait message; the
-  `Retry-After` header is set on htmx responses as well.
+  `401 + HX-Redirect: /login`). Rate limiting is **HTTP 429 + `Retry-After`**
+  on the web path too — same status and header as the JSON API — and the
+  message stays visible in both full-page and htmx fragment mode. The
+  vendored htmx 2.0.4 does not swap 4xx bodies by default, so every page
+  declares a `htmx-config` meta that enables swapping for 422/429 responses
+  (the error contract relies on it; the API's 429 is otherwise invisible in
+  the browser).
 - Loading states are native browser behavior for full-page posts; htmx mode
   disables the submit button while the request is in flight (CSS
   `htmx-request` + disabled state).

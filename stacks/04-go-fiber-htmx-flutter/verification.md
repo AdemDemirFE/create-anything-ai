@@ -30,14 +30,16 @@ go vet ./...
 go test ./... -count=1
 ```
 
-Results: **exit 0** for all three; `go vet` clean; **32/32 tests pass**
-(9 algorithm + 1 api + 16 app integration + 6 auth).
+Results: **exit 0** for all three; `go vet` clean; **49 tests pass**
+(34 top-level: 9 algorithm + 1 api + 16 app integration + 6 auth + 2 web
+unit; the formatOneDecimal rounding table adds 15 subtests).
 
 ```text
 ok  .../internal/algorithm   0.238s   (9 tests)
 ok  .../internal/api         0.384s   (1 test)
 ok  .../internal/app         3.372s   (16 tests)
 ok  .../internal/auth        0.903s   (6 tests)
+ok  .../internal/web         0.20s    (2 tests, 15 subtests)
 ```
 
 Full `-v` run list (all `--- PASS`):
@@ -63,7 +65,8 @@ Full `-v` run list (all `--- PASS`):
   email → algorithm page shows catalog → run shows output + "Measured
   duration" + "Theoretical complexity" separately → logout kills session),
   visible form errors (field-level + banner, 422), throttled web login
-  shows the rate-limit error, htmx fragment mode (422 fragment with
+  answers **429 + Retry-After** (full page AND htmx fragment, mirroring the
+  JSON API), htmx fragment mode (422 fragment with
   `login-form` id, 204 + HX-Redirect on success, run swaps the result
   fragment — never a full page).
 - `internal/auth` (6): happy path, throttle buckets keyed email+IP with XFF
