@@ -30,4 +30,4 @@ Implications for the plan:
 - Extended CONTRIBUTING with branch naming, Conventional Commits, and PR standards (changes, tests run, security assessment, known gaps).
 - Audited `docs/GLM_AIHub_SETUP.md` for credentials: none present; recorded in `DECISIONS.md` (D-001).
 - Initialized orchestrator ledger: `PLAN.md`, `TASKS.json` (6 tasks), `WORKERS.md`, `DECISIONS.md`, `BLOCKERS.md`, this file.
-- Status: in_progress — pending commit, push, and PR.
+- Status: complete — pushed as `feat/repository-foundation`; opened PR #1 (`feat: repository foundation docs and agent ledger`, base `main`). Merge decision belongs to the orchestrator after CI and review.
