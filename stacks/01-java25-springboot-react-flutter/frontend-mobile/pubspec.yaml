@@ -1,0 +1,28 @@
+name: stack01_frontend_mobile
+description: >-
+  Reference Stack 01 Flutter client. Implements the four-screen journey
+  (register, login, protected home, algorithm workbench) against the frozen
+  /api/v1 contract. NOT VERIFIED: no Flutter SDK in the implementation
+  environment (see verification.md).
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  # Target: latest stable Flutter at time of writing (3.38.x era, Dart 3.10).
+  # This constraint is declared, not verified - no SDK available.
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.5.0
+  shared_preferences: ^2.5.3
+  flutter_secure_storage: ^10.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
