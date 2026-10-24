@@ -26,14 +26,19 @@ Checks performed
        no backend/web/mobile/desktop/data/platforms/versions/environment
        keys, requires == ["to-be-determined"], maturity "proposed",
        verification gates all false, lastVerifiedAt/evidencePath null
+       (placeholder discipline is maturity-gated: it applies while the
+       stack is still 'proposed')
   C10  verification reality: any gate that is true must have a non-null
        lastVerifiedAt, a non-null evidencePath, and the evidence file must
        exist in the tree AND resolve inside the repository root (absolute
        paths and ".." traversal are rejected E_UNSAFE-style; applies to all
        stacks, incl. stack 01)
-  C11  stack 01 maturity consistency: a 'proposed' stack-01 must have all
-       gates false and no recorded evidence; a promoted stack-01 must claim
-       at least one gate, with C10 checking the recorded evidence exists
+  C11  promotion reality for every non-proposed stack: a 'proposed' stack
+        must have all gates false with no recorded evidence; any stack
+        whose maturity is above 'proposed' (stack 01 or a promoted 02-40)
+        must claim at least one true gate whose evidencePath resolves to
+        an existing in-repo file (C10 enforces the details); stack 01
+        presence is checked separately
   C12  maturity-vs-content consistency (review finding on PR #9): every
        stack whose manifest still looks like an unverified placeholder
        (requires contains "to-be-determined", or every verification gate is
@@ -401,45 +406,73 @@ def validate(root: Path) -> Findings:
         "; ".join(maturity_mismatches) if maturity_mismatches
         else "manifest maturity matches content shape (no placeholder-shaped manifest above 'proposed')")
 
-    # --- C11: stack 01 gates reflect its maturity ---------------------------
+    # --- C11: promotion reality for every non-proposed stack -----------------
     # Derive the expectation from maturity (AO review suggestion): a
-    # 'proposed' stack must have all gates false and zero evidence; any
-    # higher maturity must have true gates backed by an existing in-repo
-    # evidence file (that part is already enforced by C10).
-    stack01 = by_id.get("01-java25-springboot-react-flutter", {})
-    m01 = load_json(stacks_dir / "01-java25-springboot-react-flutter" / "stack.json", findings, "C07")
-    if m01 is not None:
-        v01 = m01.get("verification", {})
-        gates01 = {k: v01.get(k) for k in ("manifest", "unit", "integration", "e2e")}
-        maturity01 = m01.get("maturity")
-        if maturity01 == "proposed":
-            all_false = all(v is False for v in gates01.values())
-            no_evidence = v01.get("lastVerifiedAt") is None and v01.get("evidencePath") is None
-            findings.check(
-                "C11", all_false and no_evidence,
-                f"stack 01 verification gates {gates01} with no recorded evidence "
-                "(expected for maturity 'proposed': nothing verified yet)"
-                if all_false and no_evidence
-                else f"stack 01 gates {gates01} (lastVerifiedAt={v01.get('lastVerifiedAt')!r}, "
-                     f"evidencePath={v01.get('evidencePath')!r}) contradict maturity 'proposed': "
-                     "a proposed stack cannot claim verification",
-            )
+    # 'proposed' stack must have all gates false and zero evidence; ANY
+    # stack whose manifest maturity is above 'proposed' (stack 01 or a
+    # promoted 02-40) must claim at least one true gate backed by existing
+    # in-repo evidence. Without this, a stack 02-40 promoted in BOTH the
+    # manifest and the catalog (so C08 agrees) could carry invented
+    # backend/web keys with all gates false and nothing would fail.
+    promoted_failures: list[str] = []
+    for sid in ids:
+        sdir = stacks_dir / str(sid)
+        manifest = load_json(sdir / "stack.json", findings, "C07")
+        if manifest is None:
+            continue
+        maturity = manifest.get("maturity")
+        verification = manifest.get("verification")
+        gates = {k: verification.get(k) for k in ("manifest", "unit", "integration", "e2e")} \
+            if isinstance(verification, dict) else {}
+        if maturity == "proposed":
+            continue
+        # stack-01-specific presentation on top of the generic rule
+        is_stack01 = str(sid) == "01-java25-springboot-react-flutter"
+        label = "stack 01" if is_stack01 else str(sid)
+        any_true = any(v is True for v in gates.values())
+        if not any_true:
+            promoted_failures.append(
+                f"{label}: maturity {maturity!r} but every verification gate is false "
+                f"(gates {gates}); a promoted stack must claim at least one true gate "
+                "whose evidence C10 verifies in-repo")
+            continue
+        # the claimed evidence must actually resolve (reuse the C10 rule:
+        # repo-root-relative, else stack-dir-relative, both confined)
+        evidence = verification.get("evidencePath")
+        if isinstance(evidence, str) and evidence.strip():
+            confined_at_root = _evidence_outside_root(evidence, root) is None \
+                and (root / evidence).is_file()
+            confined_at_stack = _evidence_outside_root(evidence, sdir.parent) is None \
+                and (sdir / evidence).is_file()
+            if not (confined_at_root or confined_at_stack):
+                promoted_failures.append(
+                    f"{label}: maturity {maturity!r} claims gates {gates} but evidencePath "
+                    f"{evidence!r} does not resolve to an existing in-repo file")
         else:
-            any_true = any(v is True for v in gates01.values())
-            findings.check(
-                "C11", any_true,
-                f"stack 01 maturity {maturity01!r} with gates {gates01} "
-                f"(evidencePath={v01.get('evidencePath')!r}); gate truthfulness is cross-checked "
-                "by C10 (evidence must exist in-repo)",
-                ok_message=f"stack 01 maturity {maturity01!r} claims gates {gates01}; "
-                           "C10 verifies the recorded evidence exists in-repo",
-            )
-        extra_files = sorted(p.name for p in (stacks_dir / "01-java25-springboot-react-flutter").iterdir()
+            promoted_failures.append(
+                f"{label}: maturity {maturity!r} claims gates {gates} but has no usable "
+                "evidencePath")
+    if promoted_failures:
+        findings.check("C11", False, "; ".join(promoted_failures))
+    else:
+        findings.check(
+            "C11", True,
+            "every non-proposed stack claims at least one true gate with in-repo evidence "
+            "(stack 01 is present in the catalog)")
+
+    # stack-01 presence stays its own finding for continuity with Part A
+    stack01 = by_id.get("01-java25-springboot-react-flutter", {})
+    findings.check("C11", bool(stack01), "stack 01 is present in the catalog")
+
+    # informative stack-01 note: proposed stacks must not have stray content
+    m01 = load_json(stacks_dir / "01-java25-springboot-react-flutter" / "stack.json", findings, "C07")
+    if m01 is not None and m01.get("maturity") == "proposed":
+        extra_files = sorted(p.name for p in
+                             (stacks_dir / "01-java25-springboot-react-flutter").iterdir()
                              if p.name != "stack.json")
-        if extra_files and maturity01 == "proposed":
-            findings.warn("C11", f"stack 01 directory contains extra files (fine while maturity "
-                                 f"is {maturity01!r}): {extra_files}")
-        findings.check("C11", bool(stack01), "stack 01 is present in the catalog")
+        if extra_files:
+            findings.warn("C11", f"stack 01 directory contains extra files (fine while "
+                                 f"maturity is 'proposed'): {extra_files}")
 
     return findings
 

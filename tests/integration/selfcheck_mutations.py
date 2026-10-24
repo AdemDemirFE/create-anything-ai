@@ -37,6 +37,8 @@ Mutation matrix (id -> defect -> expected detector):
   M11 absolute evidencePath to an EXISTING outside   -> validate_catalog  C10 ("is an
       file                                                absolute path" reason)
   M12 malformed stacks/<id>/stack.json (invalid JSON)-> validate_schemas  S03
+  M13 stack 05 promoted in manifest+catalog with     -> validate_catalog  C11 (+C12),
+      invented tech keys, all gates false                promoted-without-gates/evidence
 
 M8 is a positive control, not a defect: it proves the C10 dual-resolution
 behaviour documented for finding F-8 — a manifest like PR #7's
@@ -65,6 +67,13 @@ message states the absolute-path rejection ("is an absolute path").
 M12 truncates a stack manifest to invalid JSON; validate_schemas.py must
 report "[FAIL] S03: ... invalid JSON" with a documented exit code and no
 traceback (the guarded `_load_json` path).
+M13 (follow-up review) closes the last C11 gap: stack 05 is promoted in
+BOTH the manifest and the catalog (so C08's manifest-vs-catalog agreement
+holds) with invented backend/web keys and every gate still false. The old
+code only gated C11-style rules on stack 01, so this slipped through; the
+generalised C11 now requires any non-proposed stack to claim at least one
+true gate with in-repo evidence, and C12 adds a second layer. The
+assertion requires "[FAIL] C11:".
 
 Sensitivity probes (do-nothing stub negative controls): for M9 and M10 the
 self-check also runs a stub validator that inspects nothing and always
@@ -430,6 +439,25 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
     record("M12", "validate_schemas.py", ["S03"], root,
            run_validator("validate_schemas.py", root))
 
+    # M13 (follow-up review): a stack 02-40 promoted in BOTH the manifest
+    # and the catalog (C08 agreement intact) with invented technology keys
+    # and every gate still false. The placeholder checks are maturity-gated
+    # and the old C11 only covered stack 01, so nothing used to fail; the
+    # generalised C11 (any non-proposed stack needs >=1 true gate with
+    # in-repo evidence) must catch it.
+    root = fresh()
+    p = root / "stacks" / "05-nestjs-typeorm-nextjs-reactnative" / "stack.json"
+
+    def m13(manifest: dict) -> None:
+        manifest["maturity"] = "verified"
+        manifest["backend"] = {"language": "TypeScript", "framework": "NestJS"}
+        manifest["web"] = {"framework": "NextJS"}
+    edit_json(p, m13)
+    cat = root / "stacks" / "catalog.json"
+    edit_json(cat, lambda c: c["stacks"][4].__setitem__("maturity", "verified"))
+    record("M13", "validate_catalog.py", ["C11"], root,
+           run_validator("validate_catalog.py", root))
+
     return results
 
 
@@ -463,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         ("M10 sensitivity probe", "validate_schemas.py", ["S05"]),
         ("M11 sensitivity probe", "validate_catalog.py", ["C10"]),
         ("M12 sensitivity probe", "validate_schemas.py", ["S03"]),
+        ("M13 sensitivity probe", "validate_catalog.py", ["C11"]),
     ):
         problem = run_healthy_probe(args.root, script, codes, stub)
         print(f"{label}: " + (problem if problem else "OK (healthy tree exit 0, stub rejected)"))
