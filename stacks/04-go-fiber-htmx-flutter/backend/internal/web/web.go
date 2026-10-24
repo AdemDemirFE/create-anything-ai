@@ -11,7 +11,6 @@ package web
 import (
 	"html/template"
 	"io/fs"
-	"math"
 	"strconv"
 	"time"
 )
@@ -85,22 +84,24 @@ func Load(fsys fs.FS) (*template.Template, error) {
 	}).ParseFS(fsys, "templates/*.html")
 }
 
-// trimFloat renders milliseconds with ONE decimal, correctly rounded
-// (half away from zero), instead of truncating: 2.3 -> "2.3", not "2.2".
+// trimFloat renders milliseconds with ONE decimal, correctly rounded:
+// 2.3 -> "2.3", not "2.2".
 func trimFloat(ms float64) string {
-	return formatOneDecimal(ms)
+	// Direct one-step formatting, as reviewed: strconv.FormatFloat performs
+	// the correctly-rounded decimal conversion itself (2.3 -> "2.3",
+	// 0.7 -> "0.7", 123.456 -> "123.5"); no intermediate math.Round needed.
+	s := strconv.FormatFloat(ms, 'f', 1, 64)
+	if s == "-0.0" {
+		return "0.0" // normalize the negative-zero artifact
+	}
+	return s
 }
 
-// formatOneDecimal formats v with exactly one decimal, correctly ROUNDED
-// (half away from zero) via strconv.FormatFloat: 2.3 -> "2.3", 2.25 ->
-// "2.3", 2.99 -> "3.0", 123.456 -> "123.5". The old hand-rolled formatter
-// truncated the fraction (float artifacts included), yielding 2.3 -> "2.2".
+// formatOneDecimal formats v with exactly one decimal via strconv's
+// correctly-rounded decimal conversion. Kept as a named function because
+// the review thread references it; trimFloat is its only caller.
 func formatOneDecimal(v float64) string {
-	r := math.Round(v*10) / 10
-	if r == 0 {
-		r = 0 // normalize -0 to 0
-	}
-	return strconv.FormatFloat(r, 'f', 1, 64)
+	return trimFloat(v)
 }
 
 // currentYear is used by the footer.
