@@ -33,6 +33,11 @@ Dependency decision (documented per the task contract):
   the fallback does not know, it refuses to guess and exits with code 3
   ("unsupported schema construct") instead of silently passing.
 
+  Engine probing: `jsonschema` is only used when BOTH `jsonschema` and its
+  `referencing` dependency import successfully (jsonschema >= 4.18); an
+  incomplete toolchain (e.g. jsonschema 4.17 with no `referencing`) cleanly
+  falls back to the stdlib engine instead of crashing with ImportError.
+
 Usage:
     python tests/integration/validate_schemas.py [--root REPO_ROOT]
 
@@ -77,11 +82,40 @@ class Findings:
 # Primary engine: the third-party `jsonschema` package (draft 2020-12).
 # --------------------------------------------------------------------------
 def try_load_jsonschema():
+    """Return the jsonschema module only if the full toolchain is usable.
+
+    jsonschema >= 4.18 needs the `referencing` package for offline $ref
+    resolution; on older jsonschema releases the import of `jsonschema`
+    succeeds but `from referencing import ...` raises ImportError (AO review
+    inline finding on validate_schemas.py:88). Probe BOTH here so an
+    incomplete toolchain cleanly falls back to the stdlib engine instead of
+    crashing with a traceback.
+    """
     try:
         import jsonschema  # noqa: PLC0415
+        from referencing import Registry, Resource  # noqa: F401, PLC0415
+        from referencing.jsonschema import DRAFT202012  # noqa: F401, PLC0415
     except ImportError:
         return None
     return jsonschema
+
+
+def _load_json(path: Path) -> tuple[object | None, str | None]:
+    """Read and parse a JSON file; return (data, None) or (None, reason).
+
+    Used everywhere instead of bare json.loads so a malformed/missing file
+    becomes a FAIL finding, never an unhandled traceback.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "file does not exist"
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"cannot be read: {exc}"
+    try:
+        return json.loads(text), None
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON: {exc}"
 
 
 def validate_with_jsonschema(jsonschema, root: Path, findings: Findings) -> bool:
@@ -89,11 +123,25 @@ def validate_with_jsonschema(jsonschema, root: Path, findings: Findings) -> bool
     from referencing import Registry, Resource
     from referencing.jsonschema import DRAFT202012
 
+    # Load the two schema files. A schema that cannot be read/parsed is a
+    # FAIL finding, never an unhandled crash (fb51 scenario).
+    catalog_schema, load_error = _load_json(root / "schemas" / "catalog.schema.json")
+    if load_error is not None:
+        findings.check("S05", False, f"schemas/catalog.schema.json: {load_error}")
+        return False
+    manifest_schema_resolved, load_error = _load_json(root / "schemas" / "stack-manifest.schema.json")
+    if load_error is not None:
+        findings.check("S05", False, f"schemas/stack-manifest.schema.json: {load_error}")
+        return False
+
+    # Schema sanity: must be JSON objects, or validation makes no sense.
+    for name, schema in (("catalog.schema.json", catalog_schema),
+                         ("stack-manifest.schema.json", manifest_schema_resolved)):
+        if not isinstance(schema, dict):
+            findings.check("S05", False, f"schemas/{name}: root is not a JSON object")
+            return False
+
     OFFLINE_BASE = "https://catalog.schema.local/"
-    catalog_schema = json.loads((root / "schemas" / "catalog.schema.json").read_text(encoding="utf-8"))
-    manifest_schema_resolved = json.loads(
-        (root / "schemas" / "stack-manifest.schema.json").read_text(encoding="utf-8")
-    )  # deep copy: the on-disk schema is never mutated by ref rewriting
 
     # Resolve the manifest schema's $ref to catalog.schema.json by *path*
     # substitution onto a synthetic offline URI, then register the catalog
@@ -126,7 +174,10 @@ def validate_with_jsonschema(jsonschema, root: Path, findings: Findings) -> bool
     findings.check("S00", True, "engine=jsonschema 4.x (Draft202012Validator, offline $ref resolution)")
 
     # catalog.json
-    catalog = json.loads((root / "stacks" / "catalog.json").read_text(encoding="utf-8"))
+    catalog, load_error = _load_json(root / "stacks" / "catalog.json")
+    if load_error is not None:
+        findings.check("S01", False, f"stacks/catalog.json: {load_error}")
+        return False
     errors = sorted(catalog_validator.iter_errors(catalog), key=lambda e: list(e.absolute_path))
     findings.check("S01", not errors,
                    f"stacks/catalog.json vs catalog.schema.json: {len(errors)} error(s)"
@@ -138,7 +189,10 @@ def validate_with_jsonschema(jsonschema, root: Path, findings: Findings) -> bool
                    f"found {len(manifests)} stack.json manifests, expected 40")
     failures = []
     for path in manifests:
-        document = json.loads(path.read_text(encoding="utf-8"))
+        document, load_error = _load_json(path)
+        if load_error is not None:
+            failures.append(f"{path.parent.name}/stack.json: {load_error}")
+            continue
         errors = sorted(manifest_validator.iter_errors(document), key=lambda e: list(e.absolute_path))
         if errors:
             failures.append(f"{path.parent.name}/stack.json: " + _fmt_error(errors[0]))
@@ -280,8 +334,17 @@ class SubsetValidator:
 
 
 def validate_with_fallback(root: Path, findings: Findings) -> bool:
-    catalog_schema = json.loads((root / "schemas" / "catalog.schema.json").read_text(encoding="utf-8"))
-    manifest_schema = json.loads((root / "schemas" / "stack-manifest.schema.json").read_text(encoding="utf-8"))
+    catalog_schema, load_error = _load_json(root / "schemas" / "catalog.schema.json")
+    if load_error is not None:
+        findings.check("S05", False, f"schemas/catalog.schema.json: {load_error}")
+        return False
+    manifest_schema, load_error = _load_json(root / "schemas" / "stack-manifest.schema.json")
+    if load_error is not None:
+        findings.check("S05", False, f"schemas/stack-manifest.schema.json: {load_error}")
+        return False
+    if not isinstance(catalog_schema, dict) or not isinstance(manifest_schema, dict):
+        findings.check("S05", False, "schema root is not a JSON object")
+        return False
     schemas_dir = root / "schemas"
 
     catalog_validator = SubsetValidator(catalog_schema, "catalog", schemas_dir)
@@ -290,7 +353,10 @@ def validate_with_fallback(root: Path, findings: Findings) -> bool:
     findings.check("S00", True, "engine=stdlib fallback subset validator (jsonschema package not available)")
 
     try:
-        catalog = json.loads((root / "stacks" / "catalog.json").read_text(encoding="utf-8"))
+        catalog, load_error = _load_json(root / "stacks" / "catalog.json")
+        if load_error is not None:
+            findings.check("S01", False, f"stacks/catalog.json: {load_error}")
+            return False
         errors = catalog_validator.validate(catalog_schema, catalog)
         findings.check("S01", not errors,
                        f"stacks/catalog.json vs catalog.schema.json: {len(errors)} error(s)"
@@ -301,7 +367,10 @@ def validate_with_fallback(root: Path, findings: Findings) -> bool:
                        f"found {len(manifests)} stack.json manifests, expected 40")
         failures = []
         for path in manifests:
-            document = json.loads(path.read_text(encoding="utf-8"))
+            document, load_error = _load_json(path)
+            if load_error is not None:
+                failures.append(f"{path.parent.name}/stack.json: {load_error}")
+                continue
             errors = manifest_validator.validate(manifest_schema, document)
             if errors:
                 failures.append(f"{path.parent.name}/stack.json: " + errors[0])
@@ -309,7 +378,13 @@ def validate_with_fallback(root: Path, findings: Findings) -> bool:
                        f"all {len(manifests)} manifests valid against stack-manifest.schema.json"
                        if not failures else "; ".join(failures))
     except UnsupportedSchema as exc:
+        # Graceful degradation: the fallback refuses to guess on constructs
+        # it does not know. This is a reported, meaningful failure (exit 3),
+        # never an unhandled crash.
         findings.check("S04", False, f"fallback engine cannot validate: {exc}")
+        return False
+    except Exception as exc:  # noqa: BLE001 - last-resort guard: never crash
+        findings.check("S05", False, f"fallback engine crashed unexpectedly: {type(exc).__name__}: {exc}")
         return False
 
     return not findings.failed
@@ -330,16 +405,28 @@ def main(argv: list[str] | None = None) -> int:
 
     findings = Findings()
     jsonschema = try_load_jsonschema()
-    if jsonschema is not None:
-        ok = validate_with_jsonschema(jsonschema, args.root, findings)
-    else:
-        ok = validate_with_fallback(args.root, findings)
+    try:
+        if jsonschema is not None:
+            ok = validate_with_jsonschema(jsonschema, args.root, findings)
+        else:
+            ok = validate_with_fallback(args.root, findings)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - last-resort guard: never crash
+        findings.check("S05", False,
+                       f"validator crashed unexpectedly: {type(exc).__name__}: {exc}")
+        ok = False
 
     print("Independent JSON Schema validation (Wave 2 / TASK-006)")
     print(f"Repository root: {args.root}")
     print("-" * 72)
     print(findings.render())
-    if not ok and findings.failed and any(code == "S04" for _, code, _ in findings.rows):
+    if any(code in ("S04", "S05") for _, code, _ in findings.rows):
+        # S04: fallback engine hit an unsupported construct (meaningful
+        # refusal, exit 3). S05: the validator itself failed to run to
+        # completion (environment/schema problem); report as failure, but
+        # exit 3 in both cases so callers can distinguish "data invalid"
+        # (exit 1) from "validator could not do its job" (exit 3).
         return 3
     return 0 if ok else 1
 
