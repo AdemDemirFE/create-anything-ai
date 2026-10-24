@@ -235,7 +235,7 @@
       "id": "36-go-gorilla-websockets-vue3",
       "number": 36,
       "category": "realtime",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "37-elixir-phoenix-liveview-postgres",
