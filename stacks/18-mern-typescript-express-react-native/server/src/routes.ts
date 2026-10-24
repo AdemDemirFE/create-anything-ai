@@ -54,6 +54,17 @@ function authUser(req: Request): UserDoc {
   return user
 }
 
+/**
+ * MongoDB duplicate-key rejection (E11000): the unique email index is the
+ * real guard against concurrent registrations that both pass the pre-check.
+ * Exported for tests.
+ */
+export function isDuplicateKeyError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const e = err as { code?: unknown; codeName?: unknown }
+  return e.code === 11000 || e.code === 11001 || e.codeName === 'DuplicateKey'
+}
+
 /** A fixed non-secret throwaway hash, computed once, for timing equalization. */
 let timingEqualizerHash: string | null = null
 async function getTimingEqualizerHash(pool: BcryptPool): Promise<string> {
@@ -94,7 +105,21 @@ export function buildRouter(deps: Deps): express.Router {
           return
         }
         const passwordHash = await bcryptPool.hashPassword(value.password, config.bcryptRounds)
-        const user = (await User.create({ email, passwordHash })) as unknown as UserDoc
+        let user: UserDoc
+        try {
+          user = (await User.create({ email, passwordHash })) as unknown as UserDoc
+        } catch (err) {
+          // Race-proof duplicate handling: the pre-check above only narrows the
+          // common path; two concurrent registers for the same email can both
+          // pass it, and the unique index is the real guard. Map the
+          // duplicate-key rejection to the same stable 409 the pre-check
+          // returns (no enumeration difference, no 500).
+          if (isDuplicateKeyError(err)) {
+            envelopeError(res, 409, codes.EMAIL_TAKEN, 'An account with this email already exists.')
+            return
+          }
+          throw err
+        }
         envelopeOk(res, { user: toPublicUser(user) }, 201)
       } catch (err) {
         next(err)
@@ -126,14 +151,14 @@ export function buildRouter(deps: Deps): express.Router {
           // non-secret throwaway hash so response timing does not reveal
           // whether the account exists. Failures count toward the throttle.
           await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
-          recordFailure(email, ip)
+          recordFailure(email, ip, throttleConfig)
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
 
         const ok = await bcryptPool.verifyPassword(value.password, user.passwordHash)
         if (!ok) {
-          recordFailure(email, ip)
+          recordFailure(email, ip, throttleConfig)
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
