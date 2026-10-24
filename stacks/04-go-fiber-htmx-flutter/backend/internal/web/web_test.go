@@ -1,7 +1,7 @@
-// Package web tests: formatOneDecimal/trimFloat is the ONE place where float
-// formatting meets the user-visible UI, so it gets a table-driven unit test
-// over the documented rounding edge cases (strconv.FormatFloat with one
-// decimal). The old hand-rolled truncating formatter produced 2.3 -> "2.2".
+// Package web tests: trimFloat is the ONE place where float formatting meets
+// the user-visible UI, so it gets a table-driven unit test over the
+// documented rounding edge cases (strconv.FormatFloat with one decimal).
+// The old hand-rolled truncating formatter produced 2.3 -> "2.2".
 package web
 
 import (
@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// TestFormatOneDecimalRounding pins the rounding contract at the boundary
-// values an AO reviewer called out, plus float-artifact cases that break
-// naive implementations (e.g. int(2.3*10) == 22 because 2.3*10 == 22.999...).
-func TestFormatOneDecimalRounding(t *testing.T) {
+// TestTrimFloatRounding pins the rounding contract at the boundary values
+// called out in review, plus float-artifact cases that break naive
+// implementations (e.g. int(2.3*10) == 22 because 2.3*10 == 22.999...).
+func TestTrimFloatRounding(t *testing.T) {
 	tests := []struct {
 		name  string
 		input float64
