@@ -13,7 +13,7 @@ scripts re-implement the rule from the contract instead of importing it.
 |---|---|
 | `validate_catalog.py` | Catalog integrity (C01–C12): exactly 40 stacks, unique ids/numbers, contiguous 1–40, id/directory agreement, policy membership **and policy↔schema-enum agreement**, placeholder discipline (derived from maturity: every `proposed` stack numbered 02–40 must be a bare placeholder; stack 01 is the documented reference exception), verification-evidence reality **with repo-root confinement** (absolute paths and `..` traversal rejected), stack-01 maturity-consistency, and **C12 maturity-vs-content consistency** (a manifest that still looks like an unverified placeholder — `requires` contains `to-be-determined` or every gate is false — must not claim a maturity above `proposed`). |
 | `validate_schemas.py` | Full JSON Schema validation of `stacks/catalog.json` and all 40 `stack.json` manifests via the third-party `jsonschema` package (draft 2020-12), with an offline stdlib fallback engine. Never crashes on bad input: malformed/missing files become `S05` FAIL findings (exit 3), not tracebacks. |
-| `selfcheck_mutations.py` | Mutation testing: injects 10 defects (M1–M10) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught with a strict criterion (non-zero exit **and** the expected code on a literal `[FAIL] <CODE>:` line; M9 additionally requires the C10 message to state the confinement rejection). Two positive controls (M8: stack-dir-relative `evidencePath` must pass **with** `[WARN] C10` and **with** `[PASS] C12`; both checks must fire). Sensitivity probes for M9/M10 run the real validators on an **unmutated** copy and prove an always-failing do-nothing stub could never satisfy the mutation assertions (anti-vacuous control). Crashing validators are reported separately as `NOT CAUGHT (crash)` and also fail the check. Proves the validators detect defects rather than always printing PASS. |
+| `selfcheck_mutations.py` | Mutation testing: injects 12 defects (M1–M12) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught with a strict criterion (non-zero exit **and** the expected code on a literal `[FAIL] <CODE>:` line; M9/M11 additionally require the C10 message to state the specific rejection reason). Positive control (M8: stack-dir-relative `evidencePath` must pass **with** `[WARN] C10` and **with** `[PASS] C12`) and anti-vacuous **sensitivity probes** for every must-fail mutation of the confinement/S05/S03 paths (M9–M12): the real validators run on an **unmutated** copy and an always-failing do-nothing stub is proven unable to satisfy the assertions. Crashing validators are reported separately as `NOT CAUGHT (crash)` and also fail the check. Proves the validators detect defects rather than always printing PASS. |
 | `run_all.py` | Runs the two validators in sequence; `--with-selfcheck` also runs the mutation self-check. |
 
 ## How to run
@@ -62,7 +62,7 @@ Summary: 4 passed, 0 failed across 4 finding(s).
 RESULT: PASS
 ```
 
-`selfcheck_mutations.py` prints M1–M10 and ends with:
+`selfcheck_mutations.py` prints M1–M12 and ends with:
 
 ```text
 M1: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C08'])
@@ -71,8 +71,12 @@ M7: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C07'])
 M8: PASS-WITH-WARN (validate_catalog.py, exit 0, [WARN] C10 present, [PASS] lines for ['C12'] present)
 M9: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C10', 'C12'])
 M10: CAUGHT (validate_schemas.py, exit 3, FAIL lines for ['S05'])
+M11: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C10'])
+M12: CAUGHT (validate_schemas.py, exit 1, FAIL lines for ['S03'])
 M9 sensitivity probe: OK (healthy tree exit 0, stub rejected)
 M10 sensitivity probe: OK (healthy tree exit 0, stub rejected)
+M11 sensitivity probe: OK (healthy tree exit 0, stub rejected)
+M12 sensitivity probe: OK (healthy tree exit 0, stub rejected)
 RESULT: PASS (all mutations caught)
 ```
 
@@ -91,6 +95,12 @@ failure must state "escapes the repository root" — a mere "does not exist"
 failure does not count; its second assertion requires `[FAIL] C12:` for the
 promoted-but-still-placeholder stack. M10 corrupts a schema file and must
 produce `[FAIL] S05:` with a documented exit code, never a traceback.
+M11 (follow-up review) uses an **absolute** evidencePath to an outside file
+that is planted where the path points, and the expected `[FAIL] C10:` must
+state "is an absolute path" — dropping the confinement check would resolve
+the planted file and pass. M12 (follow-up review) truncates a stack
+manifest to invalid JSON and must produce `[FAIL] S03: ... invalid JSON`
+with a documented exit code and no traceback.
 Sensitivity probes (anti-vacuous controls) run the real validators on an
 **unmutated** copy: the baseline must be exit 0 with no `[FAIL]` line for
 the codes under test, which is precisely what an always-failing do-nothing

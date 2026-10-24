@@ -34,6 +34,9 @@ Mutation matrix (id -> defect -> expected detector):
       + placeholder promoted without content            fixture promotes placeholder content,
                                                         so C12 must fire too)
   M10 corrupt schemas/catalog.schema.json (bad JSON) -> validate_schemas  S05
+  M11 absolute evidencePath to an EXISTING outside   -> validate_catalog  C10 ("is an
+      file                                                absolute path" reason)
+  M12 malformed stacks/<id>/stack.json (invalid JSON)-> validate_schemas  S03
 
 M8 is a positive control, not a defect: it proves the C10 dual-resolution
 behaviour documented for finding F-8 — a manifest like PR #7's
@@ -54,6 +57,14 @@ Both FAIL lines are required, so dropping either check is detected.
 
 M10 corrupts schemas/catalog.schema.json with invalid JSON; the schema
 validator must report S05 and exit with a documented code, never crash.
+M11 plants an absolute evidencePath (`C:\\...\\absolute-evil.md` /
+`/tmp/absolute-evil.md`) whose outside file EXISTS (created before the
+validator runs): a validator that dropped the confinement check would
+resolve it and pass C10, so the assertion requires "[FAIL] C10:" whose
+message states the absolute-path rejection ("is an absolute path").
+M12 truncates a stack manifest to invalid JSON; validate_schemas.py must
+report "[FAIL] S03: ... invalid JSON" with a documented exit code and no
+traceback (the guarded `_load_json` path).
 
 Sensitivity probes (do-nothing stub negative controls): for M9 and M10 the
 self-check also runs a stub validator that inspects nothing and always
@@ -386,6 +397,39 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
     record("M10", "validate_schemas.py", ["S05"], root,
            run_validator("validate_schemas.py", root))
 
+    # M11 (follow-up review): absolute evidencePath pointing OUTSIDE the
+    # repo, with the outside file CREATED — dropping the confinement check
+    # would let the validator resolve the file and pass, so the assertion
+    # requires "[FAIL] C10:" naming the absolute-path rejection. The path
+    # is built per-platform (Windows drive letter vs POSIX absolute) and
+    # planted OUTSIDE the temp copy root so only confinement can reject it.
+    root = fresh()
+    p = root / "stacks" / "03-dotnet9-blazor-react-maui" / "stack.json"
+    outside_dir = Path(tempfile.mkdtemp(prefix="qa-m11-outside-"))
+    outside_file = outside_dir / "absolute-evil.md"
+    outside_file.write_text("planted absolute evidence outside the repo\n", encoding="utf-8")
+
+    def m11(manifest: dict) -> None:
+        manifest["verification"]["manifest"] = True
+        manifest["verification"]["lastVerifiedAt"] = "2026-10-24T17:00:00Z"
+        manifest["verification"]["evidencePath"] = str(outside_file)
+    edit_json(p, m11)
+    out11 = run_validator("validate_catalog.py", root)
+    results.append(("M11", out11[0], expect_caught(
+        [("validate_catalog.py",) + out11], "M11", "validate_catalog.py",
+        ["C10"], must_contain="is an absolute path")))
+    shutil.rmtree(root.parent, ignore_errors=True)
+    shutil.rmtree(outside_dir, ignore_errors=True)
+
+    # M12 (follow-up review): malformed stack manifest (invalid JSON) —
+    # the guarded load path must report "[FAIL] S03: ... invalid JSON"
+    # with a documented exit code, never a traceback.
+    root = fresh()
+    p = root / "stacks" / "06-kotlin-ktor-compose-multiplatform" / "stack.json"
+    p.write_text('{"id": "06-kotlin-ktor-compose-multiplatform", "trunc', encoding="utf-8")
+    record("M12", "validate_schemas.py", ["S03"], root,
+           run_validator("validate_schemas.py", root))
+
     return results
 
 
@@ -417,6 +461,8 @@ def main(argv: list[str] | None = None) -> int:
     for label, script, codes in (
         ("M9 sensitivity probe", "validate_catalog.py", ["C10", "C12"]),
         ("M10 sensitivity probe", "validate_schemas.py", ["S05"]),
+        ("M11 sensitivity probe", "validate_catalog.py", ["C10"]),
+        ("M12 sensitivity probe", "validate_schemas.py", ["S03"]),
     ):
         problem = run_healthy_probe(args.root, script, codes, stub)
         print(f"{label}: " + (problem if problem else "OK (healthy tree exit 0, stub rejected)"))
