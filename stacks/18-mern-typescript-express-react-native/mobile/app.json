@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Stack 18 Document Store",
+    "slug": "stack18-document-store",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "associatedDomains": []
+    },
+    "android": {
+      "adaptiveIcon": {}
+    },
+    "scheme": "stack18"
+  }
+}
