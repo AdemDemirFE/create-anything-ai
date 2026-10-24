@@ -1,0 +1,18 @@
+{
+  "id": "05-nestjs-typeorm-nextjs-reactnative",
+  "name": "Nestjs / Typeorm / Nextjs / Reactnative",
+  "category": "enterprise-cross-platform",
+  "maturity": "proposed",
+  "description": "Proposed catalog entry 05. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
+  "requires": [
+    "to-be-determined"
+  ],
+  "verification": {
+    "manifest": false,
+    "unit": false,
+    "integration": false,
+    "e2e": false,
+    "lastVerifiedAt": null,
+    "evidencePath": null
+  }
+}
