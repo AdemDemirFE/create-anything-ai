@@ -10,7 +10,8 @@ import {
   isInsideRoot,
   assertSafeOutputPath,
   assertCliOutputPolicy,
-  assertNoSymlinkAncestry,
+  assertRealpathContainment,
+  safeRealpath,
 } from '../../packages/generator/lib/paths.js';
 import { generateSkeleton } from '../../packages/generator/lib/generate.js';
 import { errorWithCode } from '../../packages/generator/lib/errors.js';
@@ -111,35 +112,83 @@ describe('assertSafeOutputPath', () => {
   });
 });
 
-describe('assertNoSymlinkAncestry', () => {
+describe('assertRealpathContainment (realpath-based symlink policy)', () => {
   test('passes for normal nested paths', () => {
     const tmp = makeTempDir();
     try {
       const target = path.join(tmp.path, 'a', 'b', 'c');
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      assert.equal(assertNoSymlinkAncestry(target), path.resolve(target));
+      assert.equal(assertRealpathContainment(target, tmp.path), path.resolve(target));
     } finally {
       tmp.cleanup();
     }
   });
 
-  test('rejects when the target itself is a symlink', (t) => {
+  test('allows a benign OS-style symlink: root reached through a symlinked prefix', (t) => {
     const tmp = makeTempDir();
     try {
-      const real = path.join(tmp.path, 'real');
-      const link = path.join(tmp.path, 'link');
-      fs.mkdirSync(real);
+      // macOS /tmp -> /private/tmp analogue: the ROOT ITSELF (or a prefix of
+      // it) resolves through a symlink; that must stay allowed.
+      const realBase = path.join(tmp.path, 'private-tmp');
+      const linkBase = path.join(tmp.path, 'tmp');
+      fs.mkdirSync(realBase, { recursive: true });
       let made = false;
       try {
-        fs.symlinkSync(real, link, 'dir');
+        fs.symlinkSync(realBase, linkBase, 'dir');
         made = true;
       } catch {
         t.skip('symlinks not permitted on this host');
         return;
       }
       assert.ok(made);
+      const target = path.join(linkBase, 'out', 'proj');
+      // allowed root is expressed THROUGH the symlinked prefix, like /tmp/... on macOS.
+      assert.equal(assertRealpathContainment(target, path.join(linkBase)), path.join(realBase, 'out', 'proj'));
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('allows symlinks INSIDE the root that resolve to another spot inside the root', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const innerReal = path.join(tmp.path, 'inner-real');
+      const innerLink = path.join(tmp.path, 'inner-link');
+      fs.mkdirSync(innerReal, { recursive: true });
+      let made = false;
+      try {
+        fs.symlinkSync(innerReal, innerLink, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+      const target = path.join(innerLink, 'child');
+      assert.equal(assertRealpathContainment(target, tmp.path), path.join(innerReal, 'child'));
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  test('rejects a symlink chain that resolves OUTSIDE the root', (t) => {
+    const tmp = makeTempDir();
+    try {
+      const outside = path.join(path.dirname(tmp.path), 'outside-real');
+      const link = path.join(tmp.path, 'link');
+      fs.mkdirSync(outside, { recursive: true });
+      let made = false;
+      try {
+        fs.symlinkSync(outside, link, 'dir');
+        made = true;
+      } catch {
+        t.skip('symlinks not permitted on this host');
+        return;
+      }
+      assert.ok(made);
+      const target = path.join(link, 'sub', 'out');
       assert.throws(
-        () => assertNoSymlinkAncestry(link),
+        () => assertRealpathContainment(target, tmp.path),
         (err) => err.code === 'E_UNSAFE_PATH',
       );
     } finally {
@@ -147,37 +196,14 @@ describe('assertNoSymlinkAncestry', () => {
     }
   });
 
-  test('rejects when a mid-ancestor is a symlink', (t) => {
+  test('resolves a symlinked ancestor to its real destination inside the root', (t) => {
     const tmp = makeTempDir();
     try {
-      const real = path.join(tmp.path, 'real');
-      const link = path.join(tmp.path, 'link');
-      fs.mkdirSync(real);
-      let made = false;
-      try {
-        fs.symlinkSync(real, link, 'dir');
-        made = true;
-      } catch {
-        t.skip('symlinks not permitted on this host');
-        return;
-      }
-      assert.ok(made);
-      const target = path.join(link, 'child');
-      assert.throws(
-        () => assertNoSymlinkAncestry(target),
-        (err) => err.code === 'E_UNSAFE_PATH',
-      );
-    } finally {
-      tmp.cleanup();
-    }
-  });
-
-  test('rejects a symlink ABOVE the deepest existing path (full-chain walk)', (t) => {
-    const tmp = makeTempDir();
-    try {
-      // `link` -> `real`; the deepest existing segment of the target is
-      // `real/sub`. A walk that only lstat's the deepest existing entry and
-      // the missing segments below it never inspects `link` itself.
+      // `link` -> `real`, both inside the root: the target resolves to
+      // real/sub/out, which is inside the root, so this is allowed. The
+      // escape variant (symlink pointing outside) is covered by the
+      // previous test. This pins the old deepest-existing escape hole:
+      // containment is evaluated through the symlinked prefix, not lexically.
       const real = path.join(tmp.path, 'real');
       const link = path.join(tmp.path, 'link');
       fs.mkdirSync(path.join(real, 'sub'), { recursive: true });
@@ -191,13 +217,16 @@ describe('assertNoSymlinkAncestry', () => {
       }
       assert.ok(made);
       const target = path.join(link, 'sub', 'out');
-      assert.throws(
-        () => assertNoSymlinkAncestry(target),
-        (err) => err.code === 'E_UNSAFE_PATH',
-      );
+      const realTarget = assertRealpathContainment(target, tmp.path);
+      assert.equal(realTarget, path.join(real, 'sub', 'out'));
     } finally {
       tmp.cleanup();
     }
+  });
+
+  test('safeRealpath falls back to the resolved path for missing targets', () => {
+    const missing = path.join(os.tmpdir(), 'cai-missing', 'deep', 'target');
+    assert.equal(safeRealpath(missing), path.resolve(missing));
   });
 });
 
@@ -256,7 +285,7 @@ describe('generateSkeleton hardening', () => {
     }
   });
 
-  test('refuses symlinked output location (E_UNSAFE_PATH)', (t) => {
+  test('refuses a symlinked OUTPUT path even when its destination is inside the root', (t) => {
     const tmp = makeTempDir();
     try {
       const real = path.join(tmp.path, 'real-dir');
@@ -271,6 +300,9 @@ describe('generateSkeleton hardening', () => {
         return;
       }
       assert.ok(made);
+      // The chain resolves inside the root, but the OUTPUT itself is a
+      // symlink: generated content must land in the directory the user
+      // chose, not where the link points, so it is refused.
       assert.throws(
         () => generateSkeleton(fixtureStack(), link, { allowedRoot: tmp.path }),
         (err) => err.code === 'E_UNSAFE_PATH',
@@ -449,18 +481,19 @@ describe('generateSkeleton hardening', () => {
     }
   });
 
-  test('refuses an output path whose ancestor above the deepest existing entry is a symlink', (t) => {
+  test('refuses an output path through a symlink that points OUTSIDE the allowed root', (t) => {
     const tmp = makeTempDir();
     try {
-      // --output link/sub/out where `link` is a symlink pointing elsewhere:
-      // the deepest existing entry of the target is `real/sub`, and the old
-      // deepest-existing-only walk never inspected `link`.
+      // --output link/sub/out where `link` points to a directory OUTSIDE the
+      // allowed root: realpath containment must catch the escape even though
+      // the deepest existing entry (real/sub) is inside the root.
       const real = path.join(tmp.path, 'real');
+      const outside = path.join(path.dirname(tmp.path), 'cai-outside-real');
       const link = path.join(tmp.path, 'link');
       fs.mkdirSync(path.join(real, 'sub'), { recursive: true });
       let made = false;
       try {
-        fs.symlinkSync(real, link, 'dir');
+        fs.symlinkSync(outside, link, 'dir');
         made = true;
       } catch {
         t.skip('symlinks not permitted on this host');
@@ -469,12 +502,18 @@ describe('generateSkeleton hardening', () => {
       assert.ok(made);
 
       const target = path.join(link, 'sub', 'out');
-      assert.throws(
-        () => generateSkeleton(fixtureStack(), target, { allowedRoot: tmp.path }),
-        (err) => err.code === 'E_UNSAFE_PATH',
-      );
-      // Nothing may have been written through the symlink into `real`.
-      assert.deepEqual(fs.readdirSync(path.join(real, 'sub')), [], 'no writes through the symlinked ancestor');
+      try {
+        assert.throws(
+          () => generateSkeleton(fixtureStack(), target, { allowedRoot: tmp.path }),
+          (err) => err.code === 'E_UNSAFE_PATH',
+        );
+        // Nothing may have been written through the symlink: `outside` was
+        // never created (it does not exist beforehand), or stays empty.
+        const outsideEntries = fs.existsSync(outside) ? fs.readdirSync(outside) : [];
+        assert.deepEqual(outsideEntries, [], 'no writes through the escaping symlink');
+      } finally {
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
     } finally {
       tmp.cleanup();
     }
