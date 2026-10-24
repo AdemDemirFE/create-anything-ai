@@ -75,8 +75,7 @@
               "destructive",
               "external"
             ]
-          },
-          "reason": {
+          },          "reason": {
             "type": "string"
           }
         }
@@ -124,6 +123,7 @@
               "properties": {
                 "risk": {
                   "enum": [
+                    "network",
                     "destructive",
                     "external"
                   ]

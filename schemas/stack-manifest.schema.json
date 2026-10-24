@@ -24,27 +24,10 @@
     },
     "category": {
       "description": "Must be one of the category slugs declared in stacks/catalog.json categoryPolicy.",
-      "enum": [
-        "enterprise-cross-platform",
-        "baas",
-        "classic-web",
-        "ai-native",
-        "mobile-first",
-        "desktop",
-        "native",
-        "realtime",
-        "realtime-3d"
-      ]
+      "$ref": "catalog.schema.json#/$defs/category"
     },
     "maturity": {
-      "enum": [
-        "proposed",
-        "spec-ready",
-        "scaffolded",
-        "verified",
-        "production-reference",
-        "blocked"
-      ]
+      "$ref": "catalog.schema.json#/$defs/maturity"
     },
     "description": {
       "type": "string",

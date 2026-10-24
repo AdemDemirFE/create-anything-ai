@@ -71,7 +71,7 @@
   },
   "$defs": {
     "maturity": {
-      "description": "Maturity states accepted by the repository quality gates. A stack only advances after its gate evidence is recorded.",
+      "description": "Maturity states accepted by the repository quality gates. A stack only advances after its gate evidence is recorded. Single source of truth: stack-manifest.schema.json references this definition.",
       "enum": [
         "proposed",
         "spec-ready",
@@ -82,7 +82,7 @@
       ]
     },
     "category": {
-      "description": "Machine-readable category slugs used in catalog.json, stack manifests, and documentation tables.",
+      "description": "Machine-readable category slugs used in catalog.json, stack manifests, and documentation tables. Single source of truth: stack-manifest.schema.json references this definition.",
       "enum": [
         "enterprise-cross-platform",
         "baas",
