@@ -229,7 +229,7 @@
       "id": "35-dotnet9-signalr-react-redis",
       "number": 35,
       "category": "realtime",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "36-go-gorilla-websockets-vue3",

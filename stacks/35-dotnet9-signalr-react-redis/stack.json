@@ -1,18 +1,48 @@
 {
   "id": "35-dotnet9-signalr-react-redis",
-  "name": "Dotnet9 / Signalr / React / Redis",
+  "name": ".NET / ASP.NET Core SignalR + React + Redis",
   "category": "realtime",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 35. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Realtime web stack: ASP.NET Core (.NET 10) minimal API with cookie auth, bounded algorithm workbench and an authorized SignalR hub implemented and tested (backend unit+integration incl. hub over TestServer; web unit+build). Redis is declared as an optional SignalR backplane but unverified (no Redis server); docker-compose is declarative only (no Docker daemon).",
+  "backend": {
+    "language": "C#",
+    "framework": "ASP.NET Core",
+    "version": "10.0"
+  },
+  "web": {
+    "framework": "React",
+    "buildTool": "Vite",
+    "version": "19.2"
+  },
+  "data": [
+    "Redis"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
+  ],
+  "requires": [
+    ".NET SDK 10.0",
+    "Node.js 24",
+    "Docker (optional: compose + Redis backplane)"
+  ],
+  "versions": {
+    "dotnet": "10.0.401",
+    "aspnetcore": "10.0",
+    "signalr": "10.0",
+    "react": "19.2",
+    "vite": "7.3.7",
+    "vitest": "4.1.12",
+    "node": "24"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-24T20:14:53Z",
+    "evidencePath": "verification.md"
   }
 }

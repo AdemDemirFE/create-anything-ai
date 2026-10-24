@@ -1,0 +1,53 @@
+# Stack 35 — declarative compose file.
+#
+# UNVERIFIED: this file has never been executed (no Docker daemon in the
+# verification environment). The first real `docker compose up --build` is
+# its verification run. See verification.md section 6.
+#
+# Services:
+#   redis    - backplane substrate for SignalR scale-out. NOTE: the backend
+#              does not wire AddStacksRedis yet (verification.md section 5);
+#              wiring it is part of enabling multi-instance mode.
+#   backend  - ASP.NET Core minimal API + SignalR hub (port 5080).
+#   frontend - Vite dev server (port 5175) proxying /api and /hubs to the
+#              backend. For production, build the SPA (npm run build) and
+#              serve dist/ behind a static host/proxy instead.
+#
+# Credentials come from .env (see .env.example). No defaults are embedded.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: stack35-redis
+    # No ports published: only the backend network-reaches Redis.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0
+    working_dir: /src
+    volumes:
+      - ./backend:/src
+    command: dotnet run --urls http://localhost:5080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Redis: ${STACK35_REDIS_CONNECTION:?credentials come from .env}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      VITE_BACKEND_ORIGIN: ${STACK35_BACKEND_ORIGIN:?credentials come from .env}
+    ports:
+      - "5175:5175"
+    depends_on:
+      - backend
