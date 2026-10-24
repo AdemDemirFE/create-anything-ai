@@ -69,8 +69,9 @@ class Findings:
     def __init__(self) -> None:
         self.rows: list[tuple[str, str, str]] = []
 
-    def check(self, code: str, ok: bool, message: str) -> None:
-        self.rows.append(("PASS" if ok else "FAIL", code, message))
+    def check(self, code: str, ok: bool, message: str, ok_message: str | None = None) -> None:
+        self.rows.append(("PASS" if ok else "FAIL", code, message if not ok or ok_message is None
+                          else ok_message))
 
     def warn(self, code: str, message: str) -> None:
         self.rows.append(("WARN", code, message))
@@ -276,33 +277,67 @@ def validate(root: Path) -> Findings:
                 if evidence is None:
                     evidence_failures.append(f"{sid}: a gate is true but evidencePath is null")
                 else:
-                    # Confinement: evidencePath must be a repo-relative path
-                    # that resolves inside the repository root. Absolute
-                    # paths, Windows drive/UNC forms, and any ".." traversal
-                    # that escapes the root are rejected before existence is
-                    # even checked.
+                    # Confinement: evidencePath must resolve inside the
+                    # repository root. Absolute paths, Windows drive/UNC
+                    # forms, and any ".." traversal that escapes the root
+                    # are rejected before existence is even checked.
+                    #
+                    # Resolution base (finding F-8): the manifest schema
+                    # does not pin the base for relative evidencePath
+                    # values. Try repo-root-relative first (preferred,
+                    # unambiguous); if absent, accept a path relative to
+                    # the stack directory (the convention PR #7 uses,
+                    # e.g. "verification.md") and emit a WARN so the
+                    # ambiguity stays visible. Both interpretations are
+                    # confinement-checked against the repo root.
                     evidence_reason = _evidence_outside_root(evidence, root)
+                    resolved = None
+                    if evidence_reason is None and (root / evidence).is_file():
+                        resolved = "repo-root"
+                    else:
+                        stack_rel_reason = _evidence_outside_root(evidence, sdir.parent)
+                        if stack_rel_reason is None and (sdir / evidence).is_file():
+                            resolved = "stack-dir"
+                            findings.warn("C10", f"{sid}: evidencePath {evidence!r} resolved relative to "
+                                                 f"the stack directory ({sdir.name}/{evidence}); "
+                                                 "repo-root-relative is the preferred convention "
+                                                 "(schema does not pin the base — finding F-8)")
                     if evidence_reason is not None:
                         evidence_failures.append(f"{sid}: evidencePath {evidence!r} {evidence_reason}")
-                    elif not (root / evidence).exists():
-                        evidence_failures.append(f"{sid}: evidencePath {evidence!r} does not exist in the tree")
+                    elif resolved is None:
+                        detail = f"does not exist in the tree (tried repo-root-relative {root / evidence}"
+                        stack_rel_reason = _evidence_outside_root(evidence, sdir.parent)
+                        if stack_rel_reason is None:
+                            detail += f" and stack-dir-relative {sdir / evidence})"
+                        else:
+                            detail += f"; stack-dir-relative {evidence!r} {stack_rel_reason})"
+                        evidence_failures.append(f"{sid}: evidencePath {evidence!r} {detail}")
 
         number = entry.get("number")
-        if isinstance(number, int) and number >= PLACEHOLDER_MIN_NUMBER:
+        # Placeholder discipline applies to every *placeholder* stack
+        # (numbers >= PLACEHOLDER_MIN_NUMBER) whose manifest maturity is
+        # still "proposed" (AO review suggestion: derive expectations from
+        # maturity rather than hard-coding forever). Stack 01 is the
+        # reference stack: it may declare technologies while "proposed"
+        # (its acceptance plan lists concrete prerequisites), so its
+        # discipline is enforced by C11 instead.
+        is_placeholder = (isinstance(number, int) and number >= PLACEHOLDER_MIN_NUMBER
+                          and manifest.get("maturity") == "proposed")
+        if is_placeholder:
             claimed = [k for k in FORBIDDEN_PLACEHOLDER_KEYS if k in manifest]
             if claimed:
                 placeholders_bad.append(f"{sid}: placeholder declares technology/platform keys {claimed}")
             if manifest.get("requires") != ["to-be-determined"]:
                 placeholders_bad.append(f"{sid}: placeholder requires {manifest.get('requires')!r}, "
                                         "expected ['to-be-determined']")
-            if manifest.get("maturity") != "proposed":
-                placeholders_bad.append(f"{sid}: placeholder maturity {manifest.get('maturity')!r}, expected 'proposed'")
             if isinstance(verification, dict):
                 gates = [k for k in ("manifest", "unit", "integration", "e2e") if verification.get(k) is not False]
                 if gates:
                     placeholders_bad.append(f"{sid}: placeholder verification gates not all false: {gates}")
                 if verification.get("lastVerifiedAt") is not None or verification.get("evidencePath") is not None:
                     placeholders_bad.append(f"{sid}: placeholder records verification evidence it cannot have")
+            else:
+                placeholders_bad.append(f"{sid}: placeholder verification object missing/malformed")
             desc = manifest.get("description", "")
             if not (isinstance(desc, str) and desc.startswith(f"Proposed catalog entry {number:02d}")):
                 findings.warn("C09", f"{sid}: description does not follow the placeholder template "
@@ -321,27 +356,44 @@ def validate(root: Path) -> Findings:
                    "; ".join(evidence_failures) if evidence_failures
                    else "verification state is consistent with recorded evidence (none claimed)")
 
-    # --- C11: stack 01 gates reflect reality --------------------------------
+    # --- C11: stack 01 gates reflect its maturity ---------------------------
+    # Derive the expectation from maturity (AO review suggestion): a
+    # 'proposed' stack must have all gates false and zero evidence; any
+    # higher maturity must have true gates backed by an existing in-repo
+    # evidence file (that part is already enforced by C10).
     stack01 = by_id.get("01-java25-springboot-react-flutter", {})
     m01 = load_json(stacks_dir / "01-java25-springboot-react-flutter" / "stack.json", findings, "C07")
     if m01 is not None:
         v01 = m01.get("verification", {})
         gates01 = {k: v01.get(k) for k in ("manifest", "unit", "integration", "e2e")}
-        all_false = all(v is False for v in gates01.values())
-        no_evidence = v01.get("lastVerifiedAt") is None and v01.get("evidencePath") is None
-        findings.check(
-            "C11", all_false and no_evidence,
-            f"stack 01 verification gates {gates01} with no recorded evidence "
-            "(expected: nothing verified yet on main)"
-            if all_false and no_evidence
-            else f"stack 01 gates {gates01} (lastVerifiedAt={v01.get('lastVerifiedAt')!r}, "
-                 f"evidencePath={v01.get('evidencePath')!r}) do not reflect reality: no evidence exists on main",
-        )
+        maturity01 = m01.get("maturity")
+        if maturity01 == "proposed":
+            all_false = all(v is False for v in gates01.values())
+            no_evidence = v01.get("lastVerifiedAt") is None and v01.get("evidencePath") is None
+            findings.check(
+                "C11", all_false and no_evidence,
+                f"stack 01 verification gates {gates01} with no recorded evidence "
+                "(expected for maturity 'proposed': nothing verified yet)"
+                if all_false and no_evidence
+                else f"stack 01 gates {gates01} (lastVerifiedAt={v01.get('lastVerifiedAt')!r}, "
+                     f"evidencePath={v01.get('evidencePath')!r}) contradict maturity 'proposed': "
+                     "a proposed stack cannot claim verification",
+            )
+        else:
+            any_true = any(v is True for v in gates01.values())
+            findings.check(
+                "C11", any_true,
+                f"stack 01 maturity {maturity01!r} with gates {gates01} "
+                f"(evidencePath={v01.get('evidencePath')!r}); gate truthfulness is cross-checked "
+                "by C10 (evidence must exist in-repo)",
+                ok_message=f"stack 01 maturity {maturity01!r} claims gates {gates01}; "
+                           "C10 verifies the recorded evidence exists in-repo",
+            )
         extra_files = sorted(p.name for p in (stacks_dir / "01-java25-springboot-react-flutter").iterdir()
                              if p.name != "stack.json")
-        if extra_files:
-            findings.warn("C11", f"stack 01 directory contains extra files (fine while gates stay false): "
-                                 f"{extra_files}")
+        if extra_files and maturity01 == "proposed":
+            findings.warn("C11", f"stack 01 directory contains extra files (fine while maturity "
+                                 f"is {maturity01!r}): {extra_files}")
         findings.check("C11", bool(stack01), "stack 01 is present in the catalog")
 
     return findings

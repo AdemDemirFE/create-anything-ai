@@ -33,6 +33,11 @@ Dependency decision (documented per the task contract):
   the fallback does not know, it refuses to guess and exits with code 3
   ("unsupported schema construct") instead of silently passing.
 
+  Engine probing: `jsonschema` is only used when BOTH `jsonschema` and its
+  `referencing` dependency import successfully (jsonschema >= 4.18); an
+  incomplete toolchain (e.g. jsonschema 4.17 with no `referencing`) cleanly
+  falls back to the stdlib engine instead of crashing with ImportError.
+
 Usage:
     python tests/integration/validate_schemas.py [--root REPO_ROOT]
 
@@ -77,8 +82,19 @@ class Findings:
 # Primary engine: the third-party `jsonschema` package (draft 2020-12).
 # --------------------------------------------------------------------------
 def try_load_jsonschema():
+    """Return the jsonschema module only if the full toolchain is usable.
+
+    jsonschema >= 4.18 needs the `referencing` package for offline $ref
+    resolution; on older jsonschema releases the import of `jsonschema`
+    succeeds but `from referencing import ...` raises ImportError (AO review
+    inline finding on validate_schemas.py:88). Probe BOTH here so an
+    incomplete toolchain cleanly falls back to the stdlib engine instead of
+    crashing with a traceback.
+    """
     try:
         import jsonschema  # noqa: PLC0415
+        from referencing import Registry, Resource  # noqa: F401, PLC0415
+        from referencing.jsonschema import DRAFT202012  # noqa: F401, PLC0415
     except ImportError:
         return None
     return jsonschema

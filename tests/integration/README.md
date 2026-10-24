@@ -11,9 +11,9 @@ scripts re-implement the rule from the contract instead of importing it.
 
 | Script | Purpose |
 |---|---|
-| `validate_catalog.py` | Catalog integrity (C01–C11): exactly 40 stacks, unique ids/numbers, contiguous 1–40, id/directory agreement, policy membership **and policy↔schema-enum agreement**, placeholder discipline (02–40), verification-evidence reality **with repo-root confinement** (absolute paths and `..` traversal rejected), stack-01 gate reality. |
+| `validate_catalog.py` | Catalog integrity (C01–C11): exactly 40 stacks, unique ids/numbers, contiguous 1–40, id/directory agreement, policy membership **and policy↔schema-enum agreement**, placeholder discipline (derived from maturity: every `proposed` stack numbered 02–40 must be a bare placeholder; stack 01 is the documented reference exception), verification-evidence reality **with repo-root confinement** (absolute paths and `..` traversal rejected), stack-01 maturity-consistency. |
 | `validate_schemas.py` | Full JSON Schema validation of `stacks/catalog.json` and all 40 `stack.json` manifests via the third-party `jsonschema` package (draft 2020-12), with an offline stdlib fallback engine. Never crashes on bad input: malformed/missing files become `S05` FAIL findings (exit 3), not tracebacks. |
-| `selfcheck_mutations.py` | Mutation testing: injects 7 defects (M1–M7) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught with a strict criterion (non-zero exit **and** the expected code on a literal `[FAIL] <CODE>:` line). Crashing validators are reported separately as `NOT CAUGHT (crash)` and also fail the check. Proves the validators detect defects rather than always printing PASS. |
+| `selfcheck_mutations.py` | Mutation testing: injects 7 defects (M1–M7) into a temp copy of `stacks/`/`schemas/` and asserts every one is caught with a strict criterion (non-zero exit **and** the expected code on a literal `[FAIL] <CODE>:` line), plus one positive control (M8: a stack-dir-relative `evidencePath` must pass **with** a `[WARN] C10` line, proving the F-8 ambiguity stays visible). Crashing validators are reported separately as `NOT CAUGHT (crash)` and also fail the check. Proves the validators detect defects rather than always printing PASS. |
 | `run_all.py` | Runs the two validators in sequence; `--with-selfcheck` also runs the mutation self-check. |
 
 ## How to run
@@ -62,18 +62,23 @@ Summary: 4 passed, 0 failed across 4 finding(s).
 RESULT: PASS
 ```
 
-`selfcheck_mutations.py` prints M1–M7 and ends with:
+`selfcheck_mutations.py` prints M1–M8 and ends with:
 
 ```text
 M1: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C08'])
 ...
 M7: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C07'])
+M8: PASS-WITH-WARN (validate_catalog.py, exit 0, [WARN] C10 present)
 RESULT: PASS (all mutations caught)
 ```
 
 A mutation counts as **CAUGHT** only when the validator exited with a
 documented code **and** the expected code appeared on a literal
 `[FAIL] <CODE>:` line (a code mention inside a PASS line does not count).
+M8 is a **positive control**, not a defect: it injects the state PR #7 uses
+(a gate true, `evidencePath` valid only relative to the stack directory) and
+asserts the validator exits 0 **and** emits `[WARN] C10:` naming finding F-8,
+so the schema's undefined path base can never pass silently.
 Two distinct failure categories exist:
 
 ```text
@@ -93,14 +98,18 @@ the observed vs. expected values.
 * `validate_catalog.py`, `selfcheck_mutations.py`, `run_all.py`: **stdlib
   only** (no third-party packages).
 * `validate_schemas.py`: prefers the third-party
-  [`jsonschema`](https://pypi.org/project/jsonschema/) package (any 4.18+
-  release provides `Draft202012Validator` + `referencing.Registry`). This
-  environment already ships jsonschema 4.26.0 with Python 3.13, so **no
-  installation was required**; the `pip install --user jsonschema` fallback
-  from the task contract was therefore not exercised. If `jsonschema` is not
-  importable, the script automatically degrades to a stdlib subset validator
-  covering exactly the constructs these schemas use and exits with code 3 if
-  it meets anything it does not understand (it never silently passes).
+  [`jsonschema`](https://pypi.org/project/jsonschema/) package. Both
+  `jsonschema` **and** its `referencing` dependency must import
+  (jsonschema >= 4.18 provides both); an incomplete toolchain (e.g.
+  jsonschema 4.17 without `referencing`) cleanly falls back to the stdlib
+  engine instead of crashing with ImportError (AO review inline finding,
+  proven by blocking `sys.modules['referencing']`). This environment already
+  ships jsonschema 4.26.0 with Python 3.13, so **no installation was
+  required**; the `pip install --user jsonschema` fallback from the task
+  contract was therefore not exercised. If `jsonschema` is not importable,
+  the script automatically degrades to a stdlib subset validator covering
+  exactly the constructs these schemas use and exits with code 3 if it meets
+  anything it does not understand (it never silently passes).
   Both engines were exercised and agree on the current data (see
   `docs/validation-report.md`).
 
@@ -111,8 +120,12 @@ the observed vs. expected values.
   layer and add rules CI does not implement (schema-enum agreement,
   manifest↔catalog agreement, evidence-reality, orphan detection,
   placeholder discipline).
-* The generator CLI (PR #4, `feat/generator-cli`) contains its own catalog
-  validator with tests. After that PR merges, re-run
-  `python tests/integration/run_all.py` — the scripts deliberately do not
-  depend on the generator package, so they keep working either way.
-* `docs/validation-report.md` records the evidence produced by these scripts.
+* The generator CLI (PR #4, merged as 6570330) contains its own catalog
+  validator with tests (its `validate` command caught an injected
+  `E_COUNT_MISMATCH` with exit 4 during Part B verification). It validates
+  the **catalog**; full per-manifest schema validation remains covered by
+  `validate_schemas.py`.
+* `docs/validation-report.md` records the evidence produced by these scripts,
+  including finding F-8 (the manifest schema does not pin the base for
+  relative `evidencePath` values; C10 resolves repo-root-relative first and
+  falls back to stack-dir-relative with a `[WARN] C10` line).

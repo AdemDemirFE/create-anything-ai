@@ -27,12 +27,20 @@ Mutation matrix (id -> defect -> expected detector):
   M5  duplicate catalog entry (41 stacks)            -> validate_catalog  C03+C04
   M6  maturityPolicy drifts from schema enum         -> validate_catalog  C06
   M7  orphan stacks/41-rogue-stack directory         -> validate_catalog  C07
+  M8  evidencePath only valid stack-dir-relative     -> validate_catalog  C10 PASS + WARN (F-8)
+
+M8 is a positive control, not a defect: it proves the C10 dual-resolution
+behaviour documented for finding F-8 — a manifest like PR #7's
+("verification.md" relative to the stack directory) must pass with a WARN
+naming finding F-8, while a nonexistent path in either interpretation (M3)
+must still FAIL. Expected verdict for M8: "PASS-WITH-WARN".
 
 Usage:
     python tests/integration/selfcheck_mutations.py [--root REPO_ROOT]
 
-Exit codes: 0 = every mutation was caught, 1 = at least one mutation was
-missed or crashed (validator bug!), 2 = usage/environment error.
+Exit codes: 0 = every mutation was caught (and M8 behaved as specified),
+1 = at least one mutation was missed, crashed, or M8 misbehaved
+(validator bug!), 2 = usage/environment error.
 """
 
 from __future__ import annotations
@@ -93,6 +101,28 @@ def expect_caught(results: list[tuple[str, int, str]], mutation: str,
             return (f"NOT CAUGHT (missed): {script} exited {code} for the wrong reason; "
                     f"expected FAIL lines for {missing} never appeared; "
                     f"output tail: ...{output[-300:]}")
+    return f"NOT CAUGHT (missed): script {script} never ran"
+
+
+def expect_pass_with_warn(results: list[tuple[str, int, str]], script: str,
+                          warn_code: str) -> str:
+    """Positive control: validator must exit 0 AND emit `[WARN] <code>`.
+
+    Used for M8 (F-8 dual resolution): a stack-dir-relative evidencePath is
+    legitimate but must stay visible as a warning, never silently blessed.
+    """
+    for name, code, output in results:
+        if name == script:
+            if code != 0:
+                tail = output[-400:] if output else "<no output>"
+                return (f"NOT CAUGHT (missed): {script} exited {code}; M8 is a valid "
+                        f"state and must pass with a warning; output tail: ...{tail}")
+            if f"[WARN] {warn_code}:" not in output:
+                return (f"NOT CAUGHT (missed): {script} exited 0 but did not emit "
+                        f"[WARN] {warn_code}: — the F-8 ambiguity would pass silently")
+            if "Traceback (most recent call last)" in output:
+                return f"NOT CAUGHT (crash): {script} printed a traceback alongside exit 0"
+            return f"PASS-WITH-WARN ({script}, exit 0, [WARN] {warn_code} present)"
     return f"NOT CAUGHT (missed): script {script} never ran"
 
 
@@ -161,6 +191,29 @@ def run_mutations(source_root: Path) -> list[tuple[str, str, str]]:
     rogue.mkdir()
     (rogue / "stack.json").write_text("{}\n", encoding="utf-8")
     record("M7", "validate_catalog.py", ["C07"], root, run_validator("validate_catalog.py", root))
+
+    # M8 (positive control for finding F-8): evidencePath that only resolves
+    # relative to the stack directory (PR #7 convention) must PASS with a
+    # WARN, because the file genuinely exists in-repo. Maturity is promoted
+    # to 'scaffolded' in BOTH the manifest and the catalog entry (C08 keeps
+    # them in sync), mirroring the real PR #7 state.
+    root = fresh()
+    p = root / "stacks" / "01-java25-springboot-react-flutter" / "stack.json"
+    evidence_file = p.parent / "verification.md"
+    evidence_file.write_text("# Verification evidence (stub for M8)\n", encoding="utf-8")
+
+    def m8(manifest: dict) -> None:
+        manifest["maturity"] = "scaffolded"
+        manifest["verification"]["manifest"] = True
+        manifest["verification"]["lastVerifiedAt"] = "2026-10-24T17:00:00Z"
+        manifest["verification"]["evidencePath"] = "verification.md"
+    edit_json(p, m8)
+    cat = root / "stacks" / "catalog.json"
+    edit_json(cat, lambda c: c["stacks"][0].__setitem__("maturity", "scaffolded"))
+    out8 = run_validator("validate_catalog.py", root)
+    results.append(("M8", out8[0], expect_pass_with_warn([("validate_catalog.py",) + out8],
+                                                         "validate_catalog.py", "C10")))
+    shutil.rmtree(root.parent, ignore_errors=True)
 
     return results
 
