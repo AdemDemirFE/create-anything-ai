@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/schemas/generation-plan.schema.json",
   "title": "Create Anything AI Generation Plan",
-  "description": "Validates the AI-mode generation plan described in docs/GENERATOR_CONTRACT.md. Destructive or external commands always require explicit approval; path traversal is rejected. Catalog membership of stack_id and filesystem-level path checks are enforced by the generator validator.",
+  "description": "Validates the AI-mode generation plan described in docs/GENERATOR_CONTRACT.md. Network, destructive, and external commands always require explicit approval; path traversal is rejected. Catalog membership of stack_id and filesystem-level path checks are enforced by the generator validator.",
   "type": "object",
   "additionalProperties": false,
   "required": [
