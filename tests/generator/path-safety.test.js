@@ -42,14 +42,19 @@ describe('resolveOutputDir', () => {
 });
 
 describe('isInsideRoot', () => {
+  const root = path.resolve(process.platform === 'win32' ? 'C:\\work' : '/work');
+  const child = path.join(root, 'child');
+  const sibling = path.resolve(path.join(root, '..'), 'work2');
+  const other = path.resolve(path.join(root, '..'), 'other', 'child');
+
   test('accepts root itself and nested children', () => {
-    assert.equal(isInsideRoot('C:\\work', 'C:\\work'), true);
-    assert.equal(isInsideRoot('C:\\work\\child', 'C:\\work'), true);
+    assert.equal(isInsideRoot(root, root), true);
+    assert.equal(isInsideRoot(child, root), true);
   });
 
   test('rejects siblings and prefix lookalikes', () => {
-    assert.equal(isInsideRoot('C:\\work2', 'C:\\work'), false);
-    assert.equal(isInsideRoot('C:\\other\\child', 'C:\\work'), false);
+    assert.equal(isInsideRoot(sibling, root), false);
+    assert.equal(isInsideRoot(other, root), false);
   });
 });
 
@@ -169,14 +174,15 @@ describe('assertNoSymlinkAncestry', () => {
 });
 
 describe('assertCliOutputPolicy', () => {
-  const cwd = onWindows ? 'C:\\work' : '/work';
+  const cwd = path.resolve(process.platform === 'win32' ? 'C:\\work' : '/work');
+  const repo = path.resolve(process.platform === 'win32' ? 'C:\\repo' : '/repo');
 
   test('relative outputs must stay inside cwd', () => {
     assert.throws(
-      () => assertCliOutputPolicy('..\\..\\escape', { cwd, repoRoot: null }),
+      () => assertCliOutputPolicy(path.join('..', '..', 'escape'), { cwd, repoRoot: null }),
       (err) => err.code === 'E_UNSAFE_PATH',
     );
-    const ok = assertCliOutputPolicy('sub\\dir', { cwd, repoRoot: null });
+    const ok = assertCliOutputPolicy(path.join('sub', 'dir'), { cwd, repoRoot: null });
     assert.ok(ok.startsWith(path.resolve(cwd)));
   });
 
@@ -184,11 +190,11 @@ describe('assertCliOutputPolicy', () => {
     const home = os.homedir();
     assert.throws(() => assertCliOutputPolicy(path.parse(cwd).root, { cwd }), (err) => err.code === 'E_UNSAFE_PATH');
     assert.throws(() => assertCliOutputPolicy(home, { cwd }), (err) => err.code === 'E_UNSAFE_PATH');
-    assert.throws(() => assertCliOutputPolicy('C:\\repo', { cwd, repoRoot: 'C:\\repo' }), (err) => err.code === 'E_UNSAFE_PATH');
+    assert.throws(() => assertCliOutputPolicy(repo, { cwd, repoRoot: repo }), (err) => err.code === 'E_UNSAFE_PATH');
   });
 
   test('absolute subpaths outside cwd are allowed (user preference) but roots are not', () => {
-    const abs = onWindows ? 'C:\\elsewhere\\my-app' : '/elsewhere/my-app';
+    const abs = path.resolve(path.join(path.parse(cwd).root, 'elsewhere', 'my-app'));
     const ok = assertCliOutputPolicy(abs, { cwd, repoRoot: null });
     assert.equal(ok, path.resolve(abs));
   });
