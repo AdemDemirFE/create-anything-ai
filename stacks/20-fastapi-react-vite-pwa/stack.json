@@ -1,18 +1,49 @@
 {
   "id": "20-fastapi-react-vite-pwa",
-  "name": "Fastapi / React / Vite / Pwa",
+  "name": "FastAPI / React / Vite / PWA",
   "category": "classic-web",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 20. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Classic web stack: FastAPI backend (cookie sessions, bcrypt, fixed bounded algorithm workbench) implemented and tested (pytest unit + TestClient integration); React 19 + Vite PWA frontend implemented and tested (vitest + production build); PWA manifest and service worker with documented offline strategy; Docker/e2e not in scope.",
+  "backend": {
+    "language": "Python",
+    "framework": "FastAPI",
+    "version": "0.129.0"
+  },
+  "web": {
+    "framework": "React",
+    "buildTool": "Vite",
+    "version": "19.2"
+  },
+  "data": [
+    "in-memory"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
+  ],
+  "requires": [
+    "Python",
+    "Node.js"
+  ],
+  "versions": {
+    "python": "3.13.2",
+    "fastapi": "0.129.0",
+    "uvicorn": "0.41.0",
+    "bcrypt": "4.3.0",
+    "node": "24",
+    "react": "19.2",
+    "vite": "7.3.7",
+    "pytest": "9.1.1",
+    "vitest": "4.1.12"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-24T19:57:00Z",
+    "evidencePath": "verification.md"
   }
 }

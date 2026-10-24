@@ -139,7 +139,7 @@
       "id": "20-fastapi-react-vite-pwa",
       "number": 20,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "21-django5-htmx-alpine-tailwind",
