@@ -29,16 +29,15 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.2'
 mvn test
 ```
 
-Result: **BUILD SUCCESS, EXIT 0** — 25 tests (last full run after the second
-review round: cookie property paths, CSRF narrowing, CORS binding, throttle
-rework).
+Result: **BUILD SUCCESS, EXIT 0** — 26 tests (last full run after the CORS
+preflight test added in the orchestrator review round).
 
 ```text
 [INFO] Tests run: 7,  Failures: 0, Errors: 0, Skipped: 0 -- AlgorithmEngineTest
-[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- EnvelopeContractTest
 [INFO] Tests run: 2,  Failures: 0, Errors: 0, Skipped: 0 -- ProdCookieConfigTest
-[INFO] Tests run: 25, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 26, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -93,6 +92,11 @@ Issues found and fixed during real runs (all resolved, suite green):
    tally, and exceeding the limit returns **HTTP 429 + Retry-After: 60**
    (was 400). Backend suite grew to 25 tests (429 coverage, success-does-not-
    throttle coverage, CSRF-silent-403 coverage), web to 13 (CSRF echo).
+7. Orchestrator review round (run 9d3e9d91) follow-up: added a dedicated
+   CORS preflight test — allowlisted origin gets
+   `Access-Control-Allow-Origin` + credentials grant, unknown origin gets
+   none (compose/prod deployment case). Backend suite now 26 tests; full
+   `mvn test` re-run green after the addition.
 
 ## 3. Web — `npm test` + build (REAL, PASSED)
 

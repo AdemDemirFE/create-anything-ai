@@ -288,6 +288,32 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void corsAllowsListedOriginsAndRejectsUnknownOnes() {
+        // Preflight from an allowed origin must succeed.
+        HttpHeaders allowed = new HttpHeaders();
+        allowed.setAccessControlRequestMethod(HttpMethod.POST);
+        allowed.setAccessControlRequestHeaders(List.of("Content-Type"));
+        allowed.setOrigin("http://localhost:5173");
+        var preflightAllowed = rest.exchange(url("/api/v1/login"), HttpMethod.OPTIONS,
+                new HttpEntity<>(allowed), Void.class);
+        assertThat(preflightAllowed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(preflightAllowed.getHeaders().getAccessControlAllowOrigin())
+                .isEqualTo("http://localhost:5173");
+        assertThat(preflightAllowed.getHeaders().getAccessControlAllowCredentials())
+                .isEqualTo(true);
+
+        // A non-allowlisted origin (the compose/prod deployment case) gets no
+        // CORS grant: no Access-Control-Allow-Origin on the preflight response.
+        HttpHeaders unknown = new HttpHeaders();
+        unknown.setAccessControlRequestMethod(HttpMethod.POST);
+        unknown.setAccessControlRequestHeaders(List.of("Content-Type"));
+        unknown.setOrigin("http://evil.example.com");
+        var preflightUnknown = rest.exchange(url("/api/v1/login"), HttpMethod.OPTIONS,
+                new HttpEntity<>(unknown), Void.class);
+        assertThat(preflightUnknown.getHeaders().getAccessControlAllowOrigin()).isNull();
+    }
+
+    @Test
     void logoutInvalidatesSession() {
         post("/api/v1/register", Map.of("email", "frank@example.com", "password", "CorrectHorse1"),
                 jsonHeaders());
