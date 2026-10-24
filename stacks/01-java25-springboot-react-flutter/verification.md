@@ -29,16 +29,16 @@ $env:JAVA_HOME='C:\Program Files\Java\jdk-25.0.2'
 mvn test
 ```
 
-Result: **BUILD SUCCESS, EXIT 0** — 29 tests (last full run after the
-trusted-proxy XFF fix; includes `ClientIpResolutionTest`).
+Result: **BUILD SUCCESS, EXIT 0** — 30 tests (last full run after the
+XFF counter-reset regression test; includes `ClientIpResolutionTest`).
 
 ```text
 [INFO] Tests run: 7,  Failures: 0, Errors: 0, Skipped: 0 -- AlgorithmEngineTest
-[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0 -- ApiIntegrationTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- EnvelopeContractTest
 [INFO] Tests run: 2,  Failures: 0, Errors: 0, Skipped: 0 -- ProdCookieConfigTest
 [INFO] Tests run: 3,  Failures: 0, Errors: 0, Skipped: 0 -- ClientIpResolutionTest
-[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 30, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
@@ -108,6 +108,13 @@ Issues found and fixed during real runs (all resolved, suite green):
    documented in ARCHITECTURE.md, covered by `ClientIpResolutionTest`
    (3 tests: default-ignores-XFF, spoofed-XFF-no-new-identity,
    trusted-chain-right-to-left).
+9. Review thread PRRT_kwDOVV71Oc6v6f3x (explicit request): added an
+   integration test proving varying X-Forwarded-For does NOT reset the
+   throttle counter — 11 failed logins each with a different spoofed XFF
+   still reach 429 on the 11th, and a 12th attempt with yet another fresh
+   XFF stays throttled (`ApiIntegrationTest.
+   varyingSpoofedXffDoesNotResetTheThrottleCounter`). Full `mvn test`
+   re-run: 30/30 green.
 
 ## 3. Web — `npm test` + build (REAL, PASSED)
 

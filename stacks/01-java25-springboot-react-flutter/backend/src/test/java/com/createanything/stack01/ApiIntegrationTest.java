@@ -205,6 +205,39 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void varyingSpoofedXffDoesNotResetTheThrottleCounter() {
+        // Review requirement: varying X-Forwarded-For must NOT give each
+        // request a fresh throttle key. The default config trusts no proxies,
+        // so the servlet container's remote address is the identity and every
+        // fake XFF value is ignored. 11 failures with a DIFFERENT spoofed XFF
+        // each time must still reach 429 on the 11th.
+        post("/api/v1/register", Map.of("email", "xff@example.com", "password", "CorrectHorse1"),
+                jsonHeaders());
+
+        org.springframework.http.HttpStatusCode last = null;
+        for (int attempt = 1; attempt <= 11; attempt++) {
+            HttpHeaders headers = jsonHeaders();
+            headers.set("X-Forwarded-For", "198.51.100." + attempt); // fresh fake identity per request
+            var response = post("/api/v1/login",
+                    Map.of("email", "xff@example.com", "password", "WrongPass99"), headers);
+            last = response.getStatusCode();
+            if (attempt <= 10) {
+                assertThat(last).as("attempt %d must NOT be throttled", attempt)
+                        .isEqualTo(HttpStatus.BAD_REQUEST);
+            }
+        }
+        assertThat(last).as("11th failure must still be throttled despite rotating XFF")
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+        // Even the 12th attempt with yet another fresh XFF stays throttled.
+        HttpHeaders headers = jsonHeaders();
+        headers.set("X-Forwarded-For", "198.51.100.99");
+        var extra = post("/api/v1/login",
+                Map.of("email", "xff@example.com", "password", "WrongPass99"), headers);
+        assertThat(extra.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
     void successfulLoginsDoNotConsumeTheThrottleBudget() {
         post("/api/v1/register", Map.of("email", "happy@example.com", "password", "CorrectHorse1"),
                 jsonHeaders());
