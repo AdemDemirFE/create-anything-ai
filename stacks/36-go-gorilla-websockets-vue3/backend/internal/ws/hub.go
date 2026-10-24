@@ -88,15 +88,26 @@ type Config struct {
 	// WriteWait is the per-write deadline: a single message write must
 	// complete within this budget or the client is torn down.
 	WriteWait time.Duration
+	// MaxMessageSize caps every inbound frame in bytes (the read pump
+	// passes it to conn.SetReadLimit). A frame over the limit fails the
+	// read loop and tears the connection down — without it an
+	// authenticated client could push arbitrarily large frames into
+	// server memory (memory-DoS). 0 disables the cap (tests only).
+	MaxMessageSize int64
 }
+
+// DefaultMaxMessageSize is the documented inbound frame cap (64KB — ample
+// for the {"type":"ping"} control frames; broadcasts are server-generated).
+const DefaultMaxMessageSize = 64 * 1024
 
 // DefaultConfig returns the documented keepalive/backpressure policy.
 func DefaultConfig() Config {
 	return Config{
-		SendBuffer: 16,
-		PingPeriod: 30 * time.Second,
-		PongWait:   45 * time.Second,
-		WriteWait:  10 * time.Second,
+		SendBuffer:     16,
+		PingPeriod:     30 * time.Second,
+		PongWait:       45 * time.Second,
+		WriteWait:      10 * time.Second,
+		MaxMessageSize: DefaultMaxMessageSize,
 	}
 }
 
@@ -108,20 +119,31 @@ type message struct {
 // Hub is the hand-written membership + fan-out core. It is safe for
 // concurrent use: registration state changes are serialized through the
 // state channel (single goroutine owner); broadcast walks the snapshot.
+//
+// SHUTDOWN: Stop closes ONLY the done signal. Run's exit path closes every
+// remaining client (write pump says goodbye, conn closes, read pump
+// unblocks — no goroutine leaks) and clears the membership map. The entry
+// channels are intentionally NEVER closed: closing them would deliver
+// zero-value nil *Clients to Run and race parked senders into
+// send-on-closed-channel panics. Instead every public entry point selects
+// against done, so Register/Unregister/Broadcast after (or racing with)
+// Stop return immediately instead of blocking forever.
 type Hub struct {
 	cfg Config
 
-	// register/unregister/unregisterAll carry client state transitions to
-	// the run goroutine (single-writer over the map — no mutex).
+	// register/unregister/broadcastC carry state transitions to the run
+	// goroutine. Never closed — see the SHUTDOWN note above.
 	register   chan *Client
 	unregister chan *Client
 	broadcastC chan message
 
 	mu      sync.RWMutex
 	clients map[*Client]struct{}
-	// done closes when Run exits; Stop is idempotent.
+	// done closes when Stop runs: Run's exit signal and the guard every
+	// public entry point selects against.
 	done chan struct{}
-	once sync.Once
+	// stopOnce makes Stop idempotent.
+	stopOnce sync.Once
 }
 
 // NewHub builds a hub with the given config (nil = DefaultConfig).
@@ -182,41 +204,86 @@ func (h *Hub) Run() {
 				h.mu.Unlock()
 			}
 		case <-h.done:
+			// Shutdown: close every remaining client so its write pump
+			// says goodbye and exits and its read pump unblocks on the
+			// closed conn — no leaked pump goroutines — then clear the
+			// membership map.
+			h.mu.Lock()
+			for c := range h.clients {
+				c.CloseOnce()
+			}
+			h.clients = make(map[*Client]struct{})
+			h.mu.Unlock()
 			return
 		}
 	}
 }
 
-// Stop terminates Run. Idempotent.
+// Stop terminates Run: the loop drains pending transitions it already
+// selected, closes every remaining client, and returns. Register/
+// Unregister/Broadcast after (or racing with) Stop return immediately via
+// their select-on-done guard. Idempotent and safe for concurrent callers.
 func (h *Hub) Stop() {
-	h.once.Do(func() { close(h.done) })
+	h.stopOnce.Do(func() {
+		close(h.done)
+	})
 }
 
 // Register enqueues a client for membership. It returns immediately; the
 // client becomes a broadcast target once Run processes the transition.
-func (h *Hub) Register(c *Client) {
-	h.register <- c
+// After (or racing with) Stop it returns false and closes the client —
+// never blocks.
+func (h *Hub) Register(c *Client) bool {
+	select {
+	case h.register <- c:
+		return true
+	case <-h.done:
+		// Hub stopped (or Stop raced the send): reject and close the
+		// client so its pumps cannot leak.
+		c.CloseOnce()
+		return false
+	}
 }
 
 // drop removes a client from membership and closes its send channel. Safe
 // to call from any goroutine EXCEPT inside Run's own loop (Run unregisters
-// slow clients inline to avoid sending on its own channel).
+// slow clients inline to avoid sending on its own channel). After Stop it
+// still closes the client (writers must exit) but skips the dead channel.
 func (h *Hub) drop(c *Client) {
 	c.CloseOnce()
-	h.unregister <- c
+	select {
+	case h.unregister <- c:
+	case <-h.done:
+		// Hub is stopping; Run's exit path has already closed every
+		// remaining client — skipping the map update is correct.
+	}
 }
 
-// Unregister removes a client (normal disconnect path).
-func (h *Hub) Unregister(c *Client) {
+// Unregister removes a client (normal disconnect path). Returns false when
+// the hub is already stopped (the client is still closed).
+func (h *Hub) Unregister(c *Client) bool {
 	h.drop(c)
+	return !h.stopped()
+}
+
+// stopped reports whether Stop has run (non-blocking done probe).
+func (h *Hub) stopped() bool {
+	select {
+	case <-h.done:
+		return true
+	default:
+		return false
+	}
 }
 
 // Broadcast enqueues msg for every registered client. Non-blocking on the
-// caller side (channel capacity absorbs bursts); per-client delivery is
-// governed by the slow-client policy inside Run.
+// caller side; per-client delivery is governed by the slow-client policy
+// inside Run. After Stop it is a no-op.
 func (h *Hub) Broadcast(payload []byte) {
 	select {
 	case h.broadcastC <- message{payload: payload}:
+	case <-h.done:
+		// Hub stopped: drop the frame.
 	default:
 		// Hub queue full: the burst exceeds the fan-out capacity. Dropping
 		// the broadcast frame is the documented policy (never block REST
