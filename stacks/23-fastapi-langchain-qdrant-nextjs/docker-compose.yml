@@ -1,0 +1,46 @@
+version: "3.9"
+
+# Stack 23 local composition. DECLARED BUT NOT RUN during verification
+# (no Docker daemon assumed in the task session) - the first real
+# `docker compose up --build` is its verification run (see verification.md
+# section 7). Credentials are never written here; they come from .env only.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Embedding/vector configuration comes from .env, never from here.
+      STACK23_EMBEDDING_PROVIDER: ${STACK23_EMBEDDING_PROVIDER:-fake}
+      STACK23_VECTOR_STORE: ${STACK23_VECTOR_STORE:-local}
+      SECURE_COOKIES: ${SECURE_COOKIES:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+    volumes:
+      - local_vectors:/app/.local_storage
+
+  web:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run build && npm start"
+    ports:
+      - "3000:3000"
+    environment:
+      STACK23_API_URL: http://backend:8000
+    volumes:
+      - ./web:/app
+
+  # Optional live Qdrant. Start explicitly with:
+  #   docker compose up -d qdrant
+  # then set STACK23_VECTOR_STORE=qdrant, STACK23_QDRANT_IN_MEMORY=0 and
+  # STACK23_QDRANT_URL=http://qdrant:6333 for the backend service.
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  local_vectors:
+  qdrant_data:
