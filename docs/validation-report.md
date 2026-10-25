@@ -433,3 +433,209 @@ that state can neither fail nor pass silently.
 - CI hardening F-1/F-2/F-3 remain open recommendations (not blocking).
 - PR #7 (stack-01) audited pre-merge: manifest internally consistent, gates
   backed by in-repo evidence; passes the harness with the F-8 warning.
+
+---
+
+# Wave 5 Part C (clean-checkout Gate E verification) — 2026-10-25
+
+Scope: docs/QUALITY_GATES.md **Gate E — Reproducibility** ("Documented setup
+works from a clean checkout") and the Phase 3 acceptance criterion ("A clean
+checkout can build, start, migrate, seed, test, and stop using documented
+commands"). Method: **fresh `git clone` of `main` into a temp directory** (no
+reuse of any prior checkout state), then the documented harness, generator
+smoke, and a matrix of stack-documented commands **actually executed**. A
+command that was not executed is recorded as `unverified`, never as passing.
+
+Handover note (W6): the previous Part-C session (branch
+`feat/independent-qa`, commit `2bb795c` "generalise C11 + M13") went silent
+(~5 h). Its single commit was reviewed; nothing was inherited (see §C.0) and
+Part C verifies `main` @ `249e85f` as-is.
+
+## C.0 Handover review — W6 commit 2bb795c not merged, its target defect already fixed on main
+
+`origin/feat/independent-qa` head `2bb795c` (2026-10-24 21:24) generalises
+C11 to every non-proposed stack and adds mutation **M13** (stack 05 promoted
+in manifest+catalog with invented keys, all gates false → expect
+`[FAIL] C11`). Findings:
+
+- It is **not in `main`** (`git branch -r --contains` → only its own branch).
+- Its context has diverged: `main` gained mutations **M14/M15** (PR #10,
+  `a9ce55d` 2026-10-24 23:30, QUALITY_GATES maturity ladder) — after
+  `2bb795c`, so a cherry-pick would conflict; rebase needed, not inheritance.
+- Its motivating defect (C11 promotion gap for stacks 02–40) is **already
+  closed on `main`**: W6's own `selfcheck_mutations.py` (extracted from
+  `2bb795c`, run against `main`'s validators) reports
+  **M13: CAUGHT (validate_catalog.py, exit 1, FAIL lines for ['C11'])** —
+  main's ladder-aware C11 (PR #10, merged ~2 h after W6's commit) catches the
+  promotion. W6's one-line report claim ("healthy main 21/21") was true for
+  its pre-#10 base and is not reproducible against today's main.
+
+Decision: Part C starts from current `main`; the generalised-C11/M13 patch
+stays open work for the harness owner (needs a rebase onto #10's matrix).
+
+## C.1 Environment (verification box)
+
+Windows 11, C: drive started with ~14.7 GB
+free. Toolchains used (all real, no mocks): git 2.x, Go 1.27.0
+(windows/amd64), .NET SDK 10.0.401 (runtimes 9.0.8 + 10.0.12), Apache Maven
+3.9.15 (JDK 21.0.11 default; **JDK 25.0.2 via JAVA_HOME for stack-01**), Node
+v24.19.0 + npm (invoked as `npm.cmd`), PHP 8.3.33 + Composer 2.10.3, Python
+3.13.2. Present but unused by the matrix: Docker CLI 29.1.3 (daemon not
+exercised). **Missing toolchains** (their documented commands are recorded
+`unverified`, never passing): Flutter SDK, Docker daemon, Rust/cargo, Ruby,
+Elixir; `mongod` is not installed — stack-18 uses an in-process mongod via
+`mongodb-memory-server` (Node-managed binary, downloaded on first run).
+
+Environment caveats hit during verification:
+
+- **Disk pressure (environment, not a repo defect):** stack-18's first run
+  failed with `ENOSPC` while the mongod binary downloaded (C: hit 0 free).
+  Caches were purged (`go clean -cache`, `go clean -modcache`, npm/pip
+  caches, build outputs of already-verified stacks) to free ~1.8 GB; the
+  re-run passed (§C.4). Verification boxes need ≥ 5 GB free.
+- **PHP `pdo_sqlite` missing** (php.ini has `;extension=pdo_sqlite`
+  commented): stack-15's documented `php artisan migrate` failed with
+  "could not find driver". Worked around per-command without machine
+  changes: `php -d extension=pdo_sqlite -d extension=sqlite3 ...`. The
+  README honestly lists `pdo_sqlite` as a prerequisite — environment gap.
+- **Windows/AV transient:** one stack-04 `go test` run printed all packages
+  `ok` yet exited 1 with `unlinkat ... being used by another process`
+  (test binary cleanup race); two re-runs exited 0. Not a stack defect.
+- **PowerShell policy:** `npm` resolves to `npm.ps1` (blocked); `npm.cmd`
+  used throughout — documented for future Windows verifiers.
+
+## C.2 Fresh clone + independent harness — **FAIL (F-C1, High)**
+
+`git clone https://github.com/AdemDemirFE/create-anything-ai.git` →
+`main` @ `249e85f`, clean tree. Then
+`python tests/integration/run_all.py`:
+
+```text
+validate_catalog.py: Summary: 20 passed, 1 failed, 10 warning(s) → RESULT: FAIL
+validate_schemas.py: Summary: 4 passed, 0 failed → RESULT: PASS
+OVERALL: FAIL (exit 1)
+```
+
+The one failure:
+
+```text
+[FAIL] C08: 15-laravel12-vue3-inertia-flutter:
+manifest maturity 'scaffolded' != catalog 'proposed'
+```
+
+Root cause (traced with `git log`):
+
+- PR #25 (`0a44e7e`, stack-15 implementation) set the **manifest** to
+  `scaffolded` but never touched `stacks/catalog.json` (last modified by PR
+  #24, `0ec350f`); PR #27 (`06dfc54`) refreshed only `STACK_CATALOG.md`.
+  Markdown (proposed), catalog JSON (proposed) and manifest (scaffolded)
+  now disagree.
+- **CI gap:** `.github/workflows/ci.yml` validates manifests in isolation;
+  the manifest↔catalog cross-check (C08) runs **only** in the independent
+  harness, so `main` is CI-green while its own documented harness is red —
+  the repo currently fails Gate E's "documented setup works from a clean
+  checkout" out of the box.
+
+Blast radius on the self-check (`run_all.py --with-selfcheck`, also run):
+
+- Positive controls **M8/M14/M15: NOT CAUGHT (missed)** — their expected
+  state ("must pass with a warning", exit 0 on the mutated-but-valid copy)
+  is violated because the poisoned C08 baseline makes
+  `validate_catalog.py` exit 1 everywhere.
+- Sensitivity probes **M9/M11 fail** their precondition ("validate_catalog.py
+  exited 1 on an UNMUTATED copy; the healthy-tree baseline ... must be
+  exit 0"); M10/M11(caught)/M13 remain fine; **M1–M7, M9–M13 mutations
+  themselves are all still CAUGHT**.
+- Takeaway for the harness owner: one stale data row poisons the mutation
+  self-check's healthy baseline. Fix the data (F-C1) first; optionally teach
+  selfcheck to treat a known-unhealthy baseline as an explicit "HARNESS
+  BLOCKED" state instead of mutation misses.
+
+Generator-side corroboration: the generator (reads `catalog.json`) reports
+`Maturity: proposed=31, scaffolded=9` — consistent with the stale catalog.
+
+## C.3 Generator smoke (fresh clone) — PASS (with notes)
+
+All commands from the repo root of the fresh clone; `tmp/` removed after.
+
+| Command | Result |
+|---|---|
+| `node packages/generator/bin/create-anything-ai.js list` | 40 lines, `01. … [scaffolded] …` → `40. 40-python-fastapi-websockets-threejs [proposed] realtime-3d` |
+| `… validate` | `Validated 40 stacks in catalog v0.1.0 (schema 1.0.0)`, Categories: 9, Maturity: proposed=31, scaffolded=9, exit 0 |
+| `… generate 01-java25-springboot-react-flutter --output tmp --dry-run` | Plan printed (README.md, stack.json, docs/, backend/, web/, mobile/), "no files were written", exit 0 |
+| `… generate 01-java25-springboot-react-flutter --output tmp` | created README.md + stack.json + 4 empty dirs; README header shows id/category/maturity; stack.json has all four gates `false`, `evidencePath: null` — minimum-content contract met |
+
+Notes (not defects):
+
+- `generate stack-01` (numeric shorthand, as in the task brief) is rejected
+  with `E_INVALID_STACK` (exit 1) — the contract requires the full catalog
+  id `NN-lowercase-hyphenated`; `GENERATOR_CONTRACT.md` and the README agree.
+- The `scaffolded` label in the generated README comes from the **stale
+  catalog** row for 15 (F-C1) only affects that stack's row in `list`.
+
+## C.4 Stack command matrix — real runs on the fresh clone
+
+Every command below was actually executed in
+`%TEMP%\qa-part-c\clean-clone`. "Doc" = count claimed in the stack's
+README/verification docs.
+
+| Stack · part | Command (documented form) | Result | Doc cross-check |
+|---|---|---|---|
+| 04 · backend | `go test ./... -count=1` | **PASS**, exit 0 (3 runs; -v count **34** tests) | doc says 31 — count drift (low) |
+| 20 · backend | venv + `pip install -r requirements.txt` | install exit 0 | pinned deps resolve |
+| 20 · backend | `.venv\Scripts\python.exe -m pytest` | **81 passed**, 2 warnings, exit 0 | doc says 64 — count drift (low) |
+| 20 · web | `npm install` + `npm test` + `npm run build` | **19/19 passed**; build ✓ (dist emitted), exits 0 | matches (19) |
+| 35 · backend | `dotnet test` (from `backend/tests`, as documented) | **37/37 passed**, exit 0 | matches (37) |
+| 35 · web | `npm test` + `npm run build` | **17/17 passed**; build ✓, exits 0 | matches (17) |
+| 01 · backend | `mvn test` (JAVA_HOME=jdk-25.0.2) | **Tests run: 30, BUILD SUCCESS**, exit 0; fresh-clone run incl. dependency downloads ≈ 63 s | matches (30; verification.md per-class counts sum to 30) |
+| 15 · laravel | `composer install`; `cp .env.example .env`; `key:generate`; `migrate` (with `php -d extension=…`) | composer/migrate exit 0 after env workaround | prerequisite `pdo_sqlite` honestly documented (env gap, §C.1) |
+| 15 · laravel | `php vendor\phpunit\phpunit\phpunit` (documented, with env workaround) | **documented setup: 54 tests, 9 FAILURES** (AuthFlow/LoginThrottle from PR #28; "Cache store [] is not defined") → **F-C2**; with `LOGIN_THROTTLE_STORE=database`: **OK, 54 tests, 269 assertions**, exit 0 | doc says 49 tests — count drift; PR #28 tests uncounted |
+| 21 · django | venv + `pip install "django>=5.2,<6.0"`; `manage.py test` | **Found 48 tests — OK**, exit 0 | doc says 46 — count drift (low) |
+| 36 · backend | `go test ./... -count=1` | **PASS**, exit 0; -v count **36/36** | matches (36) |
+| 08 · web | `npm install` + `npm test` + `npm run build` + RLS audit | **64 passed but 1 suite failed to load** → exit 1 (**F-C3**); build ✓; RLS audit from stack root: OK (2 migrations, 4 policies); from `web/` per README: ENOENT (**F-C4**) | verification.md claims "80 passed (9 files)" — the 9th file never loads on this box; 80 is not reproducible (64 counted) |
+| 18 · server | `npm install` + `npm test` (in-process mongod) + `npm run build` | first run ENOSPC (disk, §C.1); after freeing space: **63/63 passed**, build ✓, exits 0 | README documents in-process mongod honestly |
+
+Unverified here (toolchain absent — recorded, never claimed passing):
+Flutter clients (stacks 01/04/15 mobile targets), Docker/compose flows
+(stacks 01/04/35 compose files, stack-08 `supabase local`), Rust
+(stack-07/31/39), Ruby (stack-22), Elixir (stack-37). Live-server smokes
+documented as requiring a running process (stack-15 `smoke.mjs`,
+stack-21 `smoke.py`, stack-36 two-client live smoke) were not exercised —
+out of the agreed subset; their test-gate claims above stand on the real
+runs recorded.
+
+## C.5 Findings (Part C, severity ordered)
+
+| ID | Severity | Area | Finding | Evidence | Recommended fix |
+|---|---|---|---|---|---|
+| F-C1 | **High** (fresh-checkout breaker) | `stacks/catalog.json` + CI | stack-15 manifest `scaffolded` ≠ catalog `proposed` → harness **OVERALL FAIL on a fresh clone**; also poisons selfcheck M8/M14/M15 + M9/M11 probes; CI never runs the cross-check so main stays green | §C.2; PR #25 updated manifest only | Set catalog entry 15 → `scaffolded` (matches manifest + reality), then re-run harness; add C08 cross-check (or the whole harness) to CI |
+| F-C2 | **High** (fresh-checkout breaker for stack-15) | `stacks/15-…/laravel/.env.example:71` | `LOGIN_THROTTLE_STORE=` (empty) makes `env('LOGIN_THROTTLE_STORE', env('CACHE_STORE','array'))` resolve to `''` → `Cache store [] is not defined` → login 500, **9/54 tests fail** on the documented `cp .env.example .env` path | §C.4 stack-15 row | Delete the empty line (or comment it out) so the fallback chain works; sync README's "49 tests" → 54 while touching it |
+| F-C3 | Medium | stack-08 `scripts/verify-migrations.mjs` | Shebang line makes the module fail under vitest's SSR transform (`SyntaxError: Invalid or unexpected token`); Node CLI execution is fine. `web/src/lib/migrations.test.ts` imports it → 1 dead suite, `npm test` exits 1 (64 pass, 9th file 0 tests) | §C.4; isolated probe: shebang copy fails, shebang-stripped copy imports OK under vitest | Drop the shebang (it is not a CLI entry — `web/package.json` calls it via `node`), or exclude it from vitest transform and import the stripped module |
+| F-C4 | Medium | stack-08 README:79 | Documented `node ..\scripts\verify-migrations.mjs` from `web/` fails: script resolves `supabase/migrations` against the **CWD** → `ENOENT`; from the stack root it passes | §C.4 | Document the stack-root invocation, or resolve the dir relative to the script file (`import.meta.url`) |
+| F-C5 | Low | stack docs (counts) | Test-count drift after follow-up commits: stack-04 31→34, stack-20 backend 64→81, stack-15 49→54, stack-21 46→48 | §C.4 cross-check column | Update counts (or drop exact counts in favor of "all green") when follow-up PRs add tests |
+| F-C6 | Low | harness robustness | Selfcheck's healthy-tree baseline is read from live data: a single stale catalog row turns M8/M14/M15 "NOT CAUGHT" and breaks M9/M11 probe preconditions, masking the real, simple root cause | §C.2 blast radius | After F-C1: consider a "HARNESS BLOCKED (data)" distinct failure mode when the unmutated baseline is non-zero, instead of per-mutation misses |
+| F-C7 | Info | generator ergonomics | `generate stack-01` shorthand is rejected (`E_INVALID_STACK`); full id required. Contract and docs are consistent — recorded so future verifiers do not mistake it for a bug | §C.3 | Optional UX: accept `NN`/`stack-NN` shorthand with a hint |
+
+Environment-only items (no repo action): PHP `pdo_sqlite` disabled on this
+box (worked around per-command); C: disk pressure during mongod download
+(ENOSPC) — boxes need ≥ 5 GB free; Windows AV transient on first `go test`
+cleanup; `npm.ps1` execution policy (use `npm.cmd`).
+
+## C.6 Verdict (Part C)
+
+- **Gate E is currently FAILED for `main` @ `249e85f`**: the documented
+  independent harness does not pass on a fresh clone (F-C1), and one
+  documented stack quick-start (stack-15) breaks login+tests from the
+  shipped `.env.example` (F-C2). Two more documented commands fail as
+  written (F-C3, F-C4).
+- Everything else actually executed is green on the fresh clone: generator
+  smoke (list/validate/dry-run/generate), and real test suites for stacks
+  01 (30), 04 (34), 08 web (64 + build), 15 laravel (54 after the one-line
+  env fix), 18 server (63 + build), 20 (81 + web 19 + build), 21 (48),
+  35 (37 + web 17 + build), 36 (36) — all exit 0.
+- No command was marked passing without having been executed; missing
+  toolchains are recorded `unverified` in §C.4.
+- Fix path to green Gate E: (1) catalog row 15 → `scaffolded` + CI runs the
+  harness (F-C1/F-C6), (2) `.env.example` one-line fix (F-C2), (3) stack-08
+  shebang + README invocation fixes (F-C3/F-C4), (4) count drift cleanup
+  (F-C5).
