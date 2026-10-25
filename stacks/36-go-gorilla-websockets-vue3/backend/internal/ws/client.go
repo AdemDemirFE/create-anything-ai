@@ -31,9 +31,14 @@ type Pumps struct {
 
 // ServeClient wires one upgraded conn into the hub: registers the client,
 // starts the write pump, and unregisters on exit. It blocks until the read
-// loop ends, so callers run it in its own goroutine.
+// loop ends, so callers run it in its own goroutine. When the hub is
+// stopped (Register returns false) the connection is closed immediately.
 func ServeClient(h *Hub, c *Client, conn *websocket.Conn, pumps Pumps) {
-	h.Register(c)
+	if !h.Register(c) {
+		_ = conn.Close()
+		c.CloseOnce()
+		return
+	}
 	defer func() {
 		h.Unregister(c)
 		if pumps.OnClose != nil {
@@ -50,11 +55,18 @@ func ServeClient(h *Hub, c *Client, conn *websocket.Conn, pumps Pumps) {
 
 // readPump reads until the connection dies. The read deadline is set to
 // PongWait and extended on every received frame; the pong handler resets it
-// when the peer answers our PINGs.
+// when the peer answers our PINGs. MaxMessageSize caps every inbound frame
+// via conn.SetReadLimit: a frame over the cap fails the read loop and tears
+// the connection down (memory-DoS guard — an authenticated client must not
+// be able to push arbitrarily large frames into server memory).
 func readPump(h *Hub, c *Client, conn *websocket.Conn, pumps Pumps) {
 	defer func() {
 		_ = conn.Close()
 	}()
+
+	if h.cfg.MaxMessageSize > 0 {
+		conn.SetReadLimit(h.cfg.MaxMessageSize)
+	}
 
 	if h.cfg.PongWait > 0 {
 		_ = conn.SetReadDeadline(time.Now().Add(h.cfg.PongWait))
@@ -66,7 +78,7 @@ func readPump(h *Hub, c *Client, conn *websocket.Conn, pumps Pumps) {
 	for {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
-			return // normal disconnect, close frame, or pong timeout
+			return // normal disconnect, close frame, pong timeout, or oversized frame
 		}
 		if pumps.OnMessage != nil {
 			pumps.OnMessage(c, payload)

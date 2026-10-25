@@ -71,6 +71,17 @@ Concurrency model (gorilla's chat pattern, made explicit and test-pinned):
   is dropped after `PongWait`. An APPLICATION-level `{"type":"ping"}` →
   `{"type":"pong"}` mirrors this for JS clients (protocol frames are not
   observable from the browser API).
+- **Inbound frame cap.** `readPump` calls `conn.SetReadLimit(MaxMessageSize)`
+  (default 64KB): a frame over the cap fails the read loop and tears the
+  connection down — an authenticated client must not be able to push
+  arbitrarily large frames into server memory (memory-DoS guard).
+- **Shutdown.** `Stop()` closes only the `done` signal. Every hub entry
+  point (`Register`/`Unregister`/`Broadcast`) selects against it, so calls
+  after (or racing with) Stop return immediately — no parked senders, no
+  goroutine leak. The entry channels are deliberately NEVER closed (closing
+  them would deliver nil `*Client`s to the loop and race senders into
+  send-on-closed-channel panics). Run's exit path closes every remaining
+  client so the pumps exit cleanly.
 
 ## 4. /ws upgrade order
 
@@ -97,12 +108,16 @@ logins BEFORE hashing (10 / 60s pinned window per email+IP → 429 +
 
 ## 6. Test strategy
 
-- **Hub unit (14 in `internal/ws`):** register/unregister counts, broadcast
+- **Hub unit (20 in `internal/ws`):** register/unregister counts, broadcast
   delivery, fan-out to two clients, no delivery after unregister, slow-client
   drop with buffer recovery, closed-client send, empty-hub no-op, config
   ordering; connection-level pumps over a real gorilla dialer + httptest
   (broadcast over the wire, app ping→pong, silent-peer drop after PongWait,
-  stalled-writer teardown, close-frame teardown).
+  stalled-writer teardown, close-frame teardown); shutdown + security
+  regressions (over-limit frame tears the connection down via
+  `SetReadLimit`, at-limit boundary accepted, Register/Unregister/Broadcast
+  return immediately after Stop, parked senders released, goroutine count
+  pinned across hub lifecycles, concurrent Stop race-safe).
 - **App integration (16 in `internal/app`):** the exact production wiring via
   `httptest.Server`: envelope shape (201/409/400 field-level/401 parity),
   protected 401s, full register→login→home→run→logout walk with measured
