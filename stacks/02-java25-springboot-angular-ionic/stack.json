@@ -1,18 +1,57 @@
 {
   "id": "02-java25-springboot-angular-ionic",
-  "name": "Java25 / Springboot / Angular / Ionic",
+  "name": "Java 25 / Spring Boot + Angular + Ionic",
   "category": "enterprise-cross-platform",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 02. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Multi-client application stack: Java 25 + Spring Boot 4.1 backend and Angular 20 web client implemented and tested (unit+integration over real HTTP); Ionic 8 + Capacitor 7 mobile shell implemented against the frozen contract but unverified (no mobile SDK); compose unverified (no Docker daemon).",
+  "backend": {
+    "language": "Java",
+    "framework": "Spring Boot",
+    "version": "4.1.2"
+  },
+  "web": {
+    "framework": "Angular",
+    "buildTool": "Angular CLI",
+    "version": "20.3"
+  },
+  "mobile": {
+    "framework": "Ionic"
+  },
+  "data": [
+    "PostgreSQL",
+    "H2"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web",
+    "ios",
+    "android"
+  ],
+  "requires": [
+    "JDK",
+    "Node.js",
+    "Android SDK",
+    "Docker"
+  ],
+  "versions": {
+    "java": "25",
+    "spring-boot": "4.1.2",
+    "maven": "3.9.15",
+    "node": "24",
+    "angular": "20.3",
+    "ionic": "8",
+    "capacitor": "7",
+    "h2": "2.3.232",
+    "postgresql": "16"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25T00:00:00Z",
+    "evidencePath": "verification.md"
   }
 }

@@ -1,0 +1,5 @@
+# Generated native projects (created by `npx cap add`, never committed)
+android/
+ios/
+www/
+node_modules/

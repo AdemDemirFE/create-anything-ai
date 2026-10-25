@@ -1,0 +1,32 @@
+{
+  "name": "stack02-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference Stack 02 web client: Angular 20 (standalone) consuming the /api/v1 envelope contract. Polling only — SSE/WebSocket are FORBIDDEN in this stack.",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@angular/common": "^20.3.0",
+    "@angular/compiler": "^20.3.0",
+    "@angular/core": "^20.3.0",
+    "@angular/forms": "^20.3.0",
+    "@angular/platform-browser": "^20.3.0",
+    "@angular/router": "^20.3.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.6.0",
+    "zone.js": "~0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^20.3.0",
+    "@angular/cli": "^20.3.0",
+    "@angular/compiler-cli": "^20.3.0",
+    "jsdom": "^25.0.0",
+    "typescript": "~5.8.0",
+    "vitest": "^3.0.0"
+  }
+}
