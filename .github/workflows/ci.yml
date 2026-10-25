@@ -429,18 +429,36 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Try to install actionlint (optional, non-fatal if unavailable)
+      - name: Install actionlint (best effort)
+        # The official installer drops ./actionlint into the working
+        # directory and exits 0 even when it cannot install; add the working
+        # directory to PATH when the binary appears, and record the
+        # unavailability flag only on real installer failures so the next
+        # step never dies with exit 127 ("command not found").
         run: |
           if command -v actionlint >/dev/null 2>&1; then
-            echo "actionlint already present"
+            echo "actionlint already present: $(command -v actionlint)"
           else
-            bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 2>/dev/null \
+            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
               || echo "ACTIONLINT_UNAVAILABLE=true" >> "$GITHUB_ENV"
+          fi
+          if [ -x ./actionlint ]; then
+            echo "$PWD" >> "$GITHUB_PATH"
+            ./actionlint --version
           fi
 
       - name: Run actionlint (when installed)
         if: ${{ env.ACTIONLINT_UNAVAILABLE != 'true' }}
-        run: actionlint -color
+        # Double guard: the env flag alone proved insufficient (the
+        # installer exits 0 without installing); only invoke actionlint when
+        # it really is on PATH, otherwise skip with a note - the PyYAML
+        # self-check below still validates the workflow syntax.
+        run: |
+          if command -v actionlint >/dev/null 2>&1; then
+            actionlint -color
+          else
+            echo "actionlint is not on PATH; skipping structured lint (the YAML parse self-check still runs)."
+          fi
 
       - name: YAML parse all workflows (always runs)
         run: |
