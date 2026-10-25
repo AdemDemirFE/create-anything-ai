@@ -225,6 +225,21 @@ jobs:
           print('OK: schema and catalog files present.')
           PY
 
+      - name: Install jsonschema (full schema-validation engine)
+        # validate_schemas.py falls back to a conservative stdlib subset
+        # validator when jsonschema is absent; install the real engine so CI
+        # exercises the same Draft 2020-12 validation the local runs use.
+        run: python -m pip install jsonschema
+
+      - name: Cross-artifact validation (Wave-2 validators + doc consistency)
+        # TASK-026: the inline checks above verify catalog structure but not
+        # manifest-vs-catalog maturity agreement (C08) or evidence reality
+        # (C10/C11) - the drift class that silently reached main three times
+        # (stacks 15, 15-again, 16). This step runs the independent Wave-2
+        # validators plus the STACK_CATALOG.md-vs-catalog.json consistency
+        # check (D01) so manifest/catalog/doc drift fails CI on the PR.
+        run: python tests/integration/validate_cross_artifacts.py
+
   generator-tests:
     name: Generator tests
     runs-on: ubuntu-latest
@@ -264,24 +279,225 @@ jobs:
         working-directory: packages/generator
         run: npm test
 
+  # TASK-026: per-stack smoke gates. The fast layer of every implemented
+  # stack runs on every push/PR as one async matrix job (fail-fast false so
+  # one red stack does not hide the state of the others; per-job timeouts so
+  # a hung suite cannot burn the 10-minute runner limit silently).
+  #
+  # Heavy toolchains (mvn/dotnet, stacks 01/35) and SDK-gated parts (Flutter,
+  # Expo, Capacitor, Android) are deliberately NOT in this matrix: they are
+  # marked non-critical or manual-trigger candidates (workflow_dispatch) and
+  # their verification remains documented in stacks/<id>/verification.md.
+  # Matrix axes are flat string pairs; the step dispatches on the `suite`
+  # value only, so no nested-matrix expression is needed.
+  stack-smoke:
+    name: Stack smoke — ${{ matrix.stack }} (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Node/vitest build-bearing web + shared layers -----------------
+          - stack: 08-supabase-react-vite
+            suite: web
+            path: stacks/08-supabase-react-vite/web
+          - stack: 15-laravel12-vue3-inertia-flutter
+            suite: web
+            path: stacks/15-laravel12-vue3-inertia-flutter/laravel
+          - stack: 16-laravel12-livewire-alpine-tailwind
+            suite: web
+            path: stacks/16-laravel12-livewire-alpine-tailwind/laravel
+          - stack: 17-laravel12-react-inertia-reactnative
+            suite: web+shared
+            path: stacks/17-laravel12-react-inertia-reactnative/laravel
+          - stack: 17-laravel12-react-inertia-reactnative
+            suite: shared-ts
+            path: stacks/17-laravel12-react-inertia-reactnative/shared
+          - stack: 19-pevn-express-vue3-capacitor
+            suite: server+shared+web
+            path: stacks/19-pevn-express-vue3-capacitor
+          - stack: 20-fastapi-react-vite-pwa
+            suite: web
+            path: stacks/20-fastapi-react-vite-pwa/frontend
+          - stack: 36-go-gorilla-websockets-vue3
+            suite: web
+            path: stacks/36-go-gorilla-websockets-vue3/web
+          # --- Go backends ----------------------------------------------------
+          - stack: 04-go-fiber-htmx-flutter
+            suite: go-test
+            path: stacks/04-go-fiber-htmx-flutter/backend
+          - stack: 36-go-gorilla-websockets-vue3
+            suite: go-test
+            path: stacks/36-go-gorilla-websockets-vue3/backend
+          # --- Python backends -------------------------------------------------
+          - stack: 20-fastapi-react-vite-pwa
+            suite: pytest
+            path: stacks/20-fastapi-react-vite-pwa/backend
+          - stack: 21-django5-htmx-alpine-tailwind
+            suite: django-test
+            path: stacks/21-django5-htmx-alpine-tailwind/django
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js (vitest/build suites)
+        if: ${{ matrix.suite == 'web' || matrix.suite == 'shared-ts' || matrix.suite == 'server+shared+web' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Set up Python (pytest/django suites)
+        if: ${{ matrix.suite == 'pytest' || matrix.suite == 'django-test' }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Set up Go (go-test suites)
+        if: ${{ matrix.suite == 'go-test' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: '${{ matrix.path }}/go.mod'
+          cache-dependency-path: '${{ matrix.path }}/go.sum'
+
+      - name: Node suite — npm ci + test + build
+        # The 16/laravel package has no `test` script (its TALL suite runs in
+        # PHP, not vitest); the production `vite build` (tailwind/Alpine via
+        # PostCSS) is the verified JS artifact path there (verification.md
+        # §188-196). Everything else in this arm has both scripts.
+        if: ${{ matrix.suite == 'web' || matrix.suite == 'shared-ts' }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          npm ci
+          if grep -q '"test"' package.json; then
+            npm test
+          else
+            echo "NOTE: no test script in $PWD/package.json; build only."
+          fi
+          npm run build
+
+      - name: Node suite — 19 server + shared + web (vitest + tsc)
+        if: ${{ matrix.suite == 'server+shared+web' }}
+        run: |
+          for dir in server shared web; do
+            echo "=== 19/$dir ==="
+            npm ci --prefix "stacks/19-pevn-express-vue3-capacitor/$dir"
+            npm test --prefix "stacks/19-pevn-express-vue3-capacitor/$dir"
+            npm run build --prefix "stacks/19-pevn-express-vue3-capacitor/$dir"
+          done
+
+      - name: Go suite — go build + go vet + go test
+        if: ${{ matrix.suite == 'go-test' }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Python suite — FastAPI pytest
+        if: ${{ matrix.suite == 'pytest' }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pytest
+
+      - name: Python suite — Django manage.py test
+        if: ${{ matrix.suite == 'django-test' }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          python -m pip install "django>=5.2,<6.0"
+          python manage.py test -v 1
+
+  # Workflow self-validation (TASK-026 item 5): actionlint when available,
+  # always a PyYAML syntax parse of every workflow file so a malformed
+  # workflow fails CI instead of silently disabling the gates.
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Try to install actionlint (optional, non-fatal if unavailable)
+        run: |
+          if command -v actionlint >/dev/null 2>&1; then
+            echo "actionlint already present"
+          else
+            bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 2>/dev/null \
+              || echo "ACTIONLINT_UNAVAILABLE=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run actionlint (when installed)
+        if: ${{ env.ACTIONLINT_UNAVAILABLE != 'true' }}
+        run: actionlint -color
+
+      - name: YAML parse all workflows (always runs)
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          try:
+              import yaml
+          except ImportError:
+              print('ERROR: PyYAML not available; cannot parse workflows.')
+              sys.exit(1)
+          workflows = sorted(Path('.github/workflows').glob('*.yml'))
+          if not workflows:
+              print('ERROR: no workflow files found under .github/workflows/.')
+              sys.exit(1)
+          failures = []
+          for wf in workflows:
+              try:
+                  yaml.safe_load(wf.read_text(encoding='utf-8'))
+                  print(f'OK: {wf} parses as YAML.')
+              except (yaml.YAMLError, OSError) as exc:
+                  failures.append(f'{wf}: {exc}')
+          if failures:
+              for failure in failures:
+                  print(f'ERROR: {failure}')
+              sys.exit(1)
+          print(f'OK: {len(workflows)} workflow file(s) parsed.')
+          PY
+
   # Optional summary job: makes branch protection easy by giving a single
   # "required check" that reflects both jobs, including skipped states.
   ci-summary:
     name: CI summary
     runs-on: ubuntu-latest
-    needs: [validate-catalog, generator-tests]
+    needs: [validate-catalog, generator-tests, stack-smoke, workflow-lint]
     if: ${{ always() }}
     steps:
       - name: Summarize job results
         run: |
           echo "validate-catalog: ${{ needs.validate-catalog.result }}"
           echo "generator-tests: ${{ needs.generator-tests.result }}"
+          echo "stack-smoke: ${{ needs.stack-smoke.result }}"
+          echo "workflow-lint: ${{ needs.workflow-lint.result }}"
           if [ "${{ needs.validate-catalog.result }}" != "success" ]; then
             echo "CI failed: validate-catalog did not succeed."
             exit 1
           fi
           if [ "${{ needs.generator-tests.result }}" != "success" ] && [ "${{ needs.generator-tests.result }}" != "skipped" ]; then
             echo "CI failed: generator-tests did not succeed or get skipped."
+            exit 1
+          fi
+          if [ "${{ needs.stack-smoke.result }}" != "success" ] && [ "${{ needs.stack-smoke.result }}" != "skipped" ]; then
+            echo "CI failed: stack-smoke did not succeed (a stack's fast layer is red)."
+            exit 1
+          fi
+          if [ "${{ needs.workflow-lint.result }}" != "success" ]; then
+            echo "CI failed: workflow-lint did not succeed."
             exit 1
           fi
           echo "CI summary: all required checks passed."
