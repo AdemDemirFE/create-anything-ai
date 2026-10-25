@@ -43,9 +43,19 @@ class Index extends Component
         $query = Auth::user()->notes()->orderByDesc('created_at');
 
         if ($this->search !== '') {
-            $query->where(function ($q): void {
-                $q->where('title', 'like', '%'.mb_strtolower($this->search).'%')
-                    ->orWhere('body', 'like', '%'.mb_strtolower($this->search).'%');
+            // Literal-substring match: escape the LIKE wildcards inside the
+            // USER term (% _ \) so a search for "50% off" matches "50% off"
+            // instead of every row; the % ... % wrappers stay OUR wildcards.
+            // Case-folding remains on the PHP side (mb_strtolower).
+            $term = addcslashes(mb_strtolower($this->search), '\\%_');
+
+            // The ESCAPE character is passed as a BINDING, so no PHP-side
+            // SQL-quote juggling is needed and the clause is portable
+            // across sqlite and PostgreSQL (neither enables a default
+            // escape character for LIKE).
+            $query->where(function ($q) use ($term): void {
+                $q->whereRaw('title LIKE ? ESCAPE ?', ['%'.$term.'%', '\\'])
+                    ->orWhereRaw('body LIKE ? ESCAPE ?', ['%'.$term.'%', '\\']);
             });
         }
 

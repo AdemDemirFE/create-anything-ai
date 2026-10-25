@@ -45,6 +45,26 @@ class NotesIndexTest extends TestCase
             ->assertDontSee('Beta memo');
     }
 
+    /**
+     * Review follow-up: the user's search term is a LITERAL substring —
+     * LIKE wildcards inside it (% _) must be escaped, so "50%" matches
+     * "50% off" (one row) instead of every row containing "50<anything>".
+     */
+    public function test_search_treats_like_wildcards_as_literals(): void
+    {
+        $user = User::factory()->create();
+        $user->notes()->create(['title' => '50% off deal', 'body' => 'no numbers here']);
+        $user->notes()->create(['title' => '50 percent alternative', 'body' => 'half price']);
+
+        $component = Livewire::actingAs($user)
+            ->test(\App\Livewire\Notes\Index::class)
+            ->set('search', '50% off');
+
+        $html = $component->assertOk()->html();
+        $this->assertStringContainsString('50% off deal', $html);
+        $this->assertStringNotContainsString('50 percent alternative', $html);
+    }
+
     public function test_delete_action_removes_only_the_owned_note(): void
     {
         $user = User::factory()->create();

@@ -43,10 +43,12 @@ composer install                 # exit 0 (livewire/livewire v3.8.11 resolved)
 php vendor\phpunit\phpunit\phpunit
 ```
 
-Result: **OK (63 tests, 290 assertions)**, exit 0.
+Result: **OK (67 tests, 305 assertions)**, exit 0. (Initial run before the
+review follow-up: 63 tests / 290 assertions; the 4 new contract tests and
+assertions were added in the review round — see §2c.)
 
 ```text
-OK (63 tests, 290 assertions)
+OK (67 tests, 305 assertions)
 ```
 
 Coverage by file:
@@ -71,7 +73,12 @@ Coverage by file:
 - `AlgorithmApiTest` — fixed catalog, run output + measured `execution_ms`
   separate from static `complexity`, unknown id 400 `UNKNOWN_ALGORITHM`,
   oversized input 400 `INPUT_TOO_LARGE` (at-cap accepted), input never
-  executed.
+  executed; **engine-bound contract (review follow-up):**
+  `config('stack.algorithm_max_input')` is enforced by the engine as the
+  single source of truth — a tightened bound (e.g. 250) shows up in the
+  catalog `maxInputLength` AND makes `run()` reject input above it; invalid
+  / loosening config values clamp back to the default (tighten-only);
+  reverse is code-point (multibyte) safe.
 - `ApiThrottleContractTest` — trips `throttle:api`, asserts 429
   `RATE_LIMITED` (ThrottleRequestsException renderer precedence).
 - `ApiMiddlewareWiringTest` — regression guard for the CSRF-419 lesson
@@ -82,7 +89,10 @@ Coverage by file:
 - `tests/Feature/Livewire/` — Livewire 3 component tests via
   `Livewire::test()`:
   - `NotesIndexTest` — full-page component: `wire:model.live` search
-    filter, per-user scoping, authorization on click-through actions.
+    filter, per-user scoping, authorization on click-through actions;
+    search terms with LIKE wildcards (`50% off`) match literally
+    (wildcards escaped, `ESCAPE` char passed as a binding — review
+    follow-up).
   - `NoteFormTest` — create + edit modes, validation, ownership
     re-scoping on every action via the `AuthorizesNote` trait;
     `#[Locked] noteId` rejects client-side `set()` with
@@ -124,6 +134,50 @@ leaked a stack trace because the local server `.env` had `APP_DEBUG=true`
 the safe generic body. Committed artifacts are unaffected: `.env.example`
 ships `APP_DEBUG=true` for local dev, and no committed file depends on a
 debug-enabled server.
+
+## 2c. Review follow-up round (REAL, PASSED)
+
+Orchestrator review findings on PR #31, all fixed and re-verified. The
+original fix commit (`cab373d`) was stranded on the feature branch when
+the PR was merged; this re-land applies the identical content on top of
+the merged `main` (branch `fix/stack-16-review-followup`):
+
+1. **`ALGORITHM_MAX_INPUT` advertised but not enforced by the engine
+   (REQUIRED — fixed).** The engine hardcoded `MAX_INPUT_LENGTH = 10_000`
+   while `config('stack.algorithm_max_input')` was only rendered by the
+   catalog and the Livewire workbench — tightening the env var changed
+   nothing server-side. Fix: the engine now resolves the config in its
+   constructor (tighten-only clamp: lower allowed, never above the new
+   `ABSOLUTE_MAX_INPUT_LENGTH = 100_000` ceiling; invalid/zero/negative
+   values fall back to the default) and `run()` enforces the resolved
+   value. Both consumers — `AlgorithmController::maxInputLength()` (the
+   `/api/v1` catalog field) and the Livewire workbench
+   `getMaxInputLengthProperty()` — now render `engine->maxInputLength()`
+   instead of reading config themselves. Contract tests:
+   `test_catalog_and_engine_agree_with_configured_bound` (config 250 →
+   catalog shows 250, at-cap 250 OK, 251 → 400 `INPUT_TOO_LARGE` with the
+   configured number in the message) and
+   `test_engine_clamps_invalid_config_values_tighten_only`.
+2. **LIKE wildcard escaping (OPTIONAL — implemented).** The notes search
+   interpolated the raw term between `%...%`, so a search for `50% off`
+   matched every row containing `50<anything>` (`%`/`_` kept their wildcard
+   meaning). Fix: the user term is passed through
+   `addcslashes(mb_strtolower($term), '\\%_')` and the WHERE clause now
+   declares the escape character as a BINDING
+   (`title LIKE ? ESCAPE ?` / `orWhereRaw(... ESCAPE ?)` with `\` bound) —
+   portable across sqlite and PostgreSQL (neither enables a default escape
+   character), no PHP-side SQL-quote juggling. Test:
+   `test_search_treats_like_wildcards_as_literals`.
+3. **Multibyte `reverse` (OPTIONAL — implemented).** `strrev()` is
+   byte-wise and shredded multi-byte UTF-8 (probe: `strrev('ünïcødé')`
+   produces an invalid byte sequence). Fix: reverse by code point via
+   `preg_split('//u')` + `array_reverse` (probe confirmed `mb_strrev` is
+   NOT available in this mbstring build); the palindrome check uses the
+   same mb-safe reverse. Tests: `test_reverse_is_multibyte_safe` (asserts
+   `édøcïnü` round-trips intact).
+
+Full suite after the round: **OK (67 tests, 305 assertions)**; smoke
+re-run **67/67 checks passed**; `php -l` sweep clean.
 
 ## 3. Web build (REAL, PASSED)
 
@@ -280,7 +334,7 @@ Result: **0 failures** across `app/`, `routes/`, `config/`, `tests/`,
 - `unit`: **true** — PHPUnit feature suite (envelope/auth/throttle/
   algorithm units + 17 Livewire component tests) really ran green.
 - `integration`: **true** — HTTP feature tests over the framework kernel
-  (63 tests) plus the 67-check real-HTTP smoke run against a live PHP
+  (67 tests) plus the 67-check real-HTTP smoke run against a live PHP
   server.
 - `e2e`: **false** — no automated browser e2e was run.
 - `lastVerifiedAt`: 2026-10-25T00:00:00Z (UTC timestamp of the green runs).
