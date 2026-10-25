@@ -13,7 +13,12 @@ import { performance } from 'node:perf_hooks'
 import * as codes from './error-codes.js'
 import { envelopeError, envelopeOk, validationError } from './envelope.js'
 import { User, StackDocument, toPublicDocument, toPublicUser, type DocumentDoc, type UserDoc } from './models.js'
-import { BcryptPool, QueueFullError } from './security/bcrypt-pool.js'
+import {
+  BcryptPool,
+  PoolExhaustedError,
+  QueueFullError,
+  QueueTimeoutError,
+} from './security/bcrypt-pool.js'
 import {
   attachSessionCookie,
   createSession,
@@ -182,11 +187,13 @@ export function buildRouter(deps: Deps): express.Router {
         if (!user) {
           // Unknown email: burn one bcrypt verification against a fixed
           // non-secret throwaway hash so response timing does not reveal
-          // whether the account exists. The reserved slot counts as the
-          // failure — the old post-await recordFailure call (racy) is gone.
-          void bcryptPool
-            .verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
-            .catch(() => {})
+          // whether the account exists. The verification is AWAITED — a
+          // fire-and-forget call would make unknown-email responses return
+          // ~immediately while known-email responses wait for the real
+          // compare, re-creating the enumeration oracle this hash exists to
+          // prevent (Stack-20 timing-parity lesson; review round 2). The
+          // reserved slot counts as the failure.
+          await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
@@ -205,10 +212,12 @@ export function buildRouter(deps: Deps): express.Router {
         attachSessionCookie(res, token, sessionConfig)
         envelopeOk(res, { user: toPublicUser(user) })
       } catch (err) {
-        // A full bcrypt queue is load, not a bug (review follow-up): answer
-        // with 503 + Retry-After so clients back off, and refund the
-        // reserved slot — the attempt never reached a real verdict.
-        if (err instanceof QueueFullError) {
+        // Pool saturation is load, not a bug (review follow-up): answer with
+        // 503 + Retry-After so clients back off, and refund the reserved
+        // slot — the attempt never reached a real verdict. Covers all three
+        // saturation shapes: bounded-queue overflow, a queued call whose
+        // wait budget expired, and a pool whose slots all died.
+        if (err instanceof QueueFullError || err instanceof QueueTimeoutError || err instanceof PoolExhaustedError) {
           reservation?.release()
           res.setHeader('Retry-After', String(config.throttleRetryAfterSeconds))
           envelopeError(res, 503, codes.RATE_LIMITED, 'Server is busy. Try again shortly.')

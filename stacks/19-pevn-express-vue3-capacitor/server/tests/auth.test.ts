@@ -143,6 +143,44 @@ describe('login', () => {
     expect(unknownEmail.body.error.message).toBe('Invalid email or password.')
   })
 
+  it('unknown-email responses carry the same bcrypt cost as known-email ones (timing parity)', async () => {
+    // Review round 2 regression test: the unknown-email path MUST await its
+    // equalizer verification. A fire-and-forget variant returns ~immediately
+    // while the known-email path waits for a real 12-round compare — a
+    // measurable timing oracle for account enumeration (Stack-20 lesson).
+    // With 12 rounds, one bcrypt compare costs tens of ms: the known-email
+    // 401 must take at least a full compare longer than a validation-400
+    // baseline, and the unknown-email 401 must land in the same band as the
+    // known-email 401 (NOT in the fast baseline band).
+    const email = 'timing@example.com'
+    await register(email, PASSWORD).expect(201)
+    const wrongPassword = [PASSWORD, 'totally-wrong'].join('')
+
+    // Warm-up + baseline: a request that does NO bcrypt work at all.
+    await login('', '').catch(() => {}) // warm JIT/module paths
+    const baselineStart = Date.now()
+    await login('', '').expect(400)
+    const baselineMs = Date.now() - baselineStart
+
+    const unknownStart = Date.now()
+    await login('never-registered@example.com', wrongPassword).expect(401)
+    const unknownMs = Date.now() - unknownStart
+
+    const knownStart = Date.now()
+    await login(email, wrongPassword).expect(401)
+    const knownMs = Date.now() - knownStart
+
+    // One bcrypt round costs >5ms at 12 rounds (target ~100ms/call): both
+    // 401 paths must be meaningfully slower than the no-bcrypt baseline.
+    expect(unknownMs).toBeGreaterThan(baselineMs + 5)
+    expect(knownMs).toBeGreaterThan(baselineMs + 5)
+    // Parity: the two 401 paths stay within a factor of 5 of each other —
+    // generous for scheduler noise, but two orders of magnitude apart if
+    // the await were dropped (unknown would land back in the baseline band).
+    const [slow, fast] = [Math.max(unknownMs, knownMs), Math.min(unknownMs, knownMs)]
+    expect(slow / fast).toBeLessThan(5)
+  })
+
   it('rejects validation errors before throttling logic', async () => {
     const res = await login('', '').expect(400)
     expect(res.body.error.code).toBe('VALIDATION_ERROR')

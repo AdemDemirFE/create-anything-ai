@@ -202,6 +202,39 @@ describe('login throttle', () => {
     resetThrottle()
   })
 
+  it('a hot throttled key survives a cold-key spray (true access-ordered LRU)', async () => {
+    // Review round 2 regression test: with insertion-order "eviction", a
+    // victim key near the FRONT of the Map was evicted by a spray of fresh
+    // keys even though it was being actively touched (hot). With true LRU
+    // (delete + re-set on every access) the hot key moves to the back on
+    // each touch and outlives the spray. We need an internal hook for the
+    // eviction order, so this test drives the observable contract: after
+    // interleaving MAX_ENTRIES-ish sprays with hot-key touches, the hot key
+    // must STILL be throttled (its tally was never dropped).
+    const throttle = await import('../src/security/throttle.js')
+    throttle.resetThrottle()
+    const config = { windowSeconds: 60, maxFailures: 5 }
+    const victimEmail = 'hot-victim@example.com'
+    const victimIp = '198.51.100.9'
+
+    // Drive the victim to the throttle boundary.
+    for (let i = 0; i < 5; i += 1) throttle.reserveLogin(victimEmail, victimIp, config)
+
+    // Spray cold keys while re-touching the victim between bursts. Each
+    // touch must re-position the victim to the back of the eviction order.
+    for (let burst = 0; burst < 5; burst += 1) {
+      for (let i = 0; i < 2_000; i += 1) {
+        throttle.reserveLogin(`cold-${burst}-${i}@example.com`, '203.0.113.77', config)
+      }
+      // The victim is still throttled right after the burst: its tally
+      // survived (an insertion-order eviction would have dropped it once
+      // the spray wrapped past its Map position).
+      const r = throttle.reserveLogin(victimEmail, victimIp, config)
+      expect(r.throttled).toBe(true)
+    }
+    throttle.resetThrottle()
+  })
+
   it('expired entries are pruned from the store', async () => {
     // Pruning runs lazily at most once per 30s wall-clock; force it by
     // seeding an expired row, moving lastPruneAt back via reset, and
