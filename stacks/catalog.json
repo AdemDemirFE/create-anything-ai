@@ -121,7 +121,7 @@
       "id": "17-laravel12-react-inertia-reactnative",
       "number": 17,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "18-mern-typescript-express-react-native",
