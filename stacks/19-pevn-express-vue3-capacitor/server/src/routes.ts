@@ -77,13 +77,37 @@ export function isDuplicateKeyError(err: unknown): boolean {
   return e.code === 11000 || e.code === 11001 || e.codeName === 'DuplicateKey'
 }
 
-/** A fixed non-secret throwaway hash, computed once, for timing equalization. */
-let timingEqualizerHash: string | null = null
-async function getTimingEqualizerHash(pool: BcryptPool): Promise<string> {
-  if (timingEqualizerHash === null) {
-    timingEqualizerHash = await pool.hashPassword('timing-equalizer-throwaway', 10)
+/**
+ * A fixed non-secret throwaway hash for timing equalization, cached PER
+ * (pool, rounds) pair. The rounds MUST be the same `config.bcryptRounds`
+ * used for real user hashes (review round 3): a cheaper equalizer (the old
+ * hard-coded 10) makes unknown-email compares ~4x faster than known-email
+ * ones at the default 12 — a smaller but still real enumeration oracle.
+ * Keying by pool instance too keeps multiple routers (tests) from sharing
+ * a hash across differently-configured pools.
+ */
+const timingEqualizerHashes = new WeakMap<BcryptPool, Map<number, string>>()
+async function getTimingEqualizerHash(pool: BcryptPool, rounds: number): Promise<string> {
+  let byRounds = timingEqualizerHashes.get(pool)
+  if (!byRounds) {
+    byRounds = new Map<number, string>()
+    timingEqualizerHashes.set(pool, byRounds)
   }
-  return timingEqualizerHash
+  let hash = byRounds.get(rounds)
+  if (hash === undefined) {
+    hash = await pool.hashPassword('timing-equalizer-throwaway', rounds)
+    byRounds.set(rounds, hash)
+  }
+  return hash
+}
+
+/**
+ * Test-only view of the equalizer: returns (computing if needed) the hash
+ * the unknown-email login path verifies against, so tests can pin its cost
+ * factor to config.bcryptRounds. Not used by route handling.
+ */
+export async function getTimingEqualizerHashForTest(pool: BcryptPool, rounds: number): Promise<string> {
+  return getTimingEqualizerHash(pool, rounds)
 }
 
 export function buildRouter(deps: Deps): express.Router {
@@ -193,7 +217,7 @@ export function buildRouter(deps: Deps): express.Router {
           // compare, re-creating the enumeration oracle this hash exists to
           // prevent (Stack-20 timing-parity lesson; review round 2). The
           // reserved slot counts as the failure.
-          await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
+          await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool, config.bcryptRounds))
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }

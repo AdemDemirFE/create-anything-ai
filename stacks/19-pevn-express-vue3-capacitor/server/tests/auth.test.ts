@@ -144,41 +144,53 @@ describe('login', () => {
   })
 
   it('unknown-email responses carry the same bcrypt cost as known-email ones (timing parity)', async () => {
-    // Review round 2 regression test: the unknown-email path MUST await its
-    // equalizer verification. A fire-and-forget variant returns ~immediately
-    // while the known-email path waits for a real 12-round compare — a
-    // measurable timing oracle for account enumeration (Stack-20 lesson).
-    // With 12 rounds, one bcrypt compare costs tens of ms: the known-email
-    // 401 must take at least a full compare longer than a validation-400
-    // baseline, and the unknown-email 401 must land in the same band as the
-    // known-email 401 (NOT in the fast baseline band).
+    // Review round 2 regression test, tightened after review round 3: the
+    // unknown-email path must (a) AWAIT its equalizer verification and
+    // (b) verify against a hash at the SAME cost factor as real user hashes
+    // (config.bcryptRounds). The original equalizer was hashed at 10 while
+    // user hashes used 12 — an ~4x speed gap that kept a smaller enumeration
+    // oracle alive, and a ratio-of-5 assertion would have hidden exactly
+    // that gap. Now: assert the stored hash cost equals bcryptRounds, and
+    // bound the unknown/known timing ratio at 1.8 (scheduler noise is well
+    // under that; a 4x cost gap is well over it).
     const email = 'timing@example.com'
     await register(email, PASSWORD).expect(201)
     const wrongPassword = [PASSWORD, 'totally-wrong'].join('')
+    const rounds = testApp.config.bcryptRounds
 
-    // Warm-up + baseline: a request that does NO bcrypt work at all.
-    await login('', '').catch(() => {}) // warm JIT/module paths
+    // (a) The registered user's stored hash is at the configured cost.
+    const { User } = await import('../src/models.js')
+    const stored = (await User.findOne({ email })) as unknown as { passwordHash: string } | null
+    expect(stored?.passwordHash).toMatch(new RegExp(`^\\$2[aby]\\$${String(rounds).padStart(2, '0')}\\$`))
+    // (b) The equalizer hash the unknown-email path compares against is at
+    // the SAME cost (routes.ts exports it for exactly this assertion).
+    const { getTimingEqualizerHashForTest } = await import('../src/routes.js')
+    const equalizerHash = await getTimingEqualizerHashForTest(testApp.bcryptPool, rounds)
+    expect(equalizerHash).toMatch(new RegExp(`^\\$2[aby]\\$${String(rounds).padStart(2, '0')}\\$`))
+
+    // (c) Wire-level parity: best-of-3 per side damps one-off scheduler
+    // spikes without slowing the suite meaningfully (each sample is one
+    // ~100ms bcrypt compare).
+    const samples = { unknown: Number.MAX_SAFE_INTEGER, known: Number.MAX_SAFE_INTEGER }
+    for (let round = 0; round < 3; round += 1) {
+      const unknownStart = Date.now()
+      await login('never-registered@example.com', wrongPassword).expect(401)
+      samples.unknown = Math.min(samples.unknown, Date.now() - unknownStart)
+      const knownStart = Date.now()
+      await login(email, wrongPassword).expect(401)
+      samples.known = Math.min(samples.known, Date.now() - knownStart)
+    }
+
+    // Both 401 paths do real bcrypt work (far above a no-bcrypt request).
     const baselineStart = Date.now()
     await login('', '').expect(400)
     const baselineMs = Date.now() - baselineStart
-
-    const unknownStart = Date.now()
-    await login('never-registered@example.com', wrongPassword).expect(401)
-    const unknownMs = Date.now() - unknownStart
-
-    const knownStart = Date.now()
-    await login(email, wrongPassword).expect(401)
-    const knownMs = Date.now() - knownStart
-
-    // One bcrypt round costs >5ms at 12 rounds (target ~100ms/call): both
-    // 401 paths must be meaningfully slower than the no-bcrypt baseline.
-    expect(unknownMs).toBeGreaterThan(baselineMs + 5)
-    expect(knownMs).toBeGreaterThan(baselineMs + 5)
-    // Parity: the two 401 paths stay within a factor of 5 of each other —
-    // generous for scheduler noise, but two orders of magnitude apart if
-    // the await were dropped (unknown would land back in the baseline band).
-    const [slow, fast] = [Math.max(unknownMs, knownMs), Math.min(unknownMs, knownMs)]
-    expect(slow / fast).toBeLessThan(5)
+    expect(samples.unknown).toBeGreaterThan(baselineMs)
+    expect(samples.known).toBeGreaterThan(baselineMs)
+    // Tight parity: a same-cost pair of compares agrees within noise; the
+    // old cost-10-vs-12 gap (~4x) fails this comfortably.
+    const [slow, fast] = [Math.max(samples.unknown, samples.known), Math.min(samples.unknown, samples.known)]
+    expect(slow / fast).toBeLessThan(1.8)
   })
 
   it('rejects validation errors before throttling logic', async () => {
