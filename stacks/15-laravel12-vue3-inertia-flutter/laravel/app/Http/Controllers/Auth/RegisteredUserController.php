@@ -30,9 +30,22 @@ class RegisteredUserController extends Controller
      * (field error under "email", no "account exists" wording, no database
      * exception leakage). The unique index at the persistence layer is the
      * real guard (docs/PRODUCT_REQUIREMENTS.md section 6).
+     *
+     * The email is normalized (trimmed + lowercased) BEFORE validation so
+     * the `unique:users,email` rule checks the exact value that will be
+     * stored and that login looks up. Without this, "User@X.com" passes the
+     * unique check against a stored "user@x.com" on case-sensitive
+     * collations, then collides with the DB unique index and surfaces as a
+     * 500 instead of the 422 VALIDATION_ERROR envelope.
      */
     public function store(Request $request): RedirectResponse|JsonResponse
     {
+        // Normalize first (trim + lowercase), validate second: the unique
+        // rule and the persisted value must be the same string.
+        $request->merge([
+            'email' => mb_strtolower(trim((string) $request->input('email'))),
+        ]);
+
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:255'],
             'email' => ['required', 'string', 'email:rfc', 'max:255', 'unique:users,email'],
@@ -41,7 +54,7 @@ class RegisteredUserController extends Controller
 
         $user = User::create([
             'name' => $data['name'],
-            'email' => mb_strtolower($data['email']),
+            'email' => $data['email'], // already normalized above
             'password' => Hash::make($data['password']), // bcrypt, salted per user
         ]);
 

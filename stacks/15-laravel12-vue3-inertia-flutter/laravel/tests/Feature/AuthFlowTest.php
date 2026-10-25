@@ -73,6 +73,71 @@ class AuthFlowTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('sql', json_encode($body) ?: '');
     }
 
+    /**
+     * Regression guard for the mixed-case duplicate register: emails are
+     * normalized (trim + lowercase) BEFORE the unique:users,email rule runs,
+     * so "User@X.com" must be rejected as a 422 VALIDATION_ERROR against the
+     * stored lowercase "user@x.com". Before the fix the raw mixed-case value
+     * passed the unique check, hit the DB unique index at persistence time
+     * and surfaced as a 500 INTERNAL_ERROR instead of the validation error.
+     */
+    public function test_mixed_case_duplicate_email_is_a_validation_error_not_a_500(): void
+    {
+        User::factory()->create(['email' => 'user@x.com']);
+
+        $response = $this->postJson('/api/v1/register', [
+            'name' => 'Mixed Case',
+            'email' => 'User@X.com',
+            'password' => 'correcthorse1',
+        ]);
+
+        $response->assertStatus(422);
+        $body = $response->json();
+
+        $this->assertSame('VALIDATION_ERROR', $body['error']['code']);
+
+        $fields = array_column($body['error']['details'] ?? [], 'field');
+        $this->assertContains('email', $fields);
+
+        // Still enumeration-safe: no wording that reveals the account exists.
+        $encoded = json_encode($body) ?: '';
+        $this->assertStringNotContainsStringIgnoringCase('duplicate', $encoded);
+        $this->assertStringNotContainsStringIgnoringCase('exists', $encoded);
+
+        // And nothing was persisted under either spelling:
+        $this->assertDatabaseMissing('users', ['email' => 'User@X.com']);
+        $this->assertSame(1, User::query()->where('email', 'like', 'user@x.com')->count());
+    }
+
+    public function test_register_normalizes_email_to_lowercase_and_trimmed(): void
+    {
+        $response = $this->postJson('/api/v1/register', [
+            'name' => 'Padded Case',
+            'email' => '  Padded@Example.COM  ',
+            'password' => 'correcthorse1',
+        ]);
+
+        $response->assertStatus(201);
+        $this->assertSame('padded@example.com', $response->json()['data']['user']['email']);
+        $this->assertDatabaseHas('users', ['email' => 'padded@example.com']);
+    }
+
+    public function test_mixed_case_register_then_lowercase_login_succeeds(): void
+    {
+        $this->postJson('/api/v1/register', [
+            'name' => 'Case Bridge',
+            'email' => 'CaseBridge@X.com',
+            'password' => 'correcthorse1',
+        ])->assertStatus(201);
+
+        // Login looks up the lowercased email — a client that echoes back the
+        // mixed-case spelling it registered with must still get in:
+        $this->postJson('/api/v1/login', [
+            'email' => 'CaseBridge@X.com',
+            'password' => 'correcthorse1',
+        ])->assertOk();
+    }
+
     public function test_login_sets_httponly_session_cookie(): void
     {
         $user = User::factory()->create(['password' => Hash::make('correcthorse1')]);

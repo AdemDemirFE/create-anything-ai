@@ -13,9 +13,10 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
-use Illuminate\Routing\Middleware\ThrottleRequestsException;use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Session\TokenMismatchException;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -117,6 +118,27 @@ return Application::configure(basePath: dirname(__DIR__))
             return null;
         });
 
+        // ThrottleRequestsException is a SUBCLASS of Symfony's HttpException
+        // (429 TooManyRequestsHttpException), and render callbacks are tried
+        // in registration order. This specialised renderer must therefore be
+        // registered BEFORE the generic HttpException renderer below — or it
+        // would never match and a throttle:api 429 would surface as the
+        // generic HTTP_429 code instead of RATE_LIMITED. Pinned by
+        // ApiThrottleContractTest (trips throttle:api, asserts RATE_LIMITED).
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return Envelope::error(
+                    $request,
+                    code: 'RATE_LIMITED',
+                    message: 'Too many requests. Please retry later.',
+                    status: 429,
+                    headers: $e->getHeaders(),
+                );
+            }
+
+            return null;
+        });
+
         // NOTE: Handler::prepareException() converts AuthorizationException
         // into AccessDeniedHttpException BEFORE render callbacks run, so the
         // 403 case is covered by the HttpException variants below.
@@ -157,20 +179,6 @@ return Application::configure(basePath: dirname(__DIR__))
                     headers: method_exists($e, 'getHeaders') ? $e->getHeaders() : [],
                 ),
             };
-        });
-
-        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
-            if ($request->is('api/*')) {
-                return Envelope::error(
-                    $request,
-                    code: 'RATE_LIMITED',
-                    message: 'Too many requests. Please retry later.',
-                    status: 429,
-                    headers: $e->getHeaders(),
-                );
-            }
-
-            return null;
         });
 
         $exceptions->render(function (NotFoundHttpException $e, Request $request) {
