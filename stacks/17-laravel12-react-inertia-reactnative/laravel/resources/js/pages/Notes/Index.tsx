@@ -3,12 +3,16 @@ import type { NoteDto } from '../../types';
 
 interface NotesIndexProps {
     notes: NoteDto[];
-    /** Bounded-list pagination props (review follow-up; server-controlled). */
+    /** Bounded-list pagination props (server-controlled, existence-backed). */
     page?: number;
     limit?: number;
+    /** Total notes owned by the user — drives the Newer/Older link logic. */
+    total?: number;
+    /** True when page * limit < total, i.e. an "Older notes" page exists. */
+    hasMore?: boolean;
 }
 
-export default function NotesIndex({ notes, page = 1, limit }: NotesIndexProps) {
+export default function NotesIndex({ notes, page = 1, limit, total, hasMore = false }: NotesIndexProps) {
     const remove = (id: number) => {
         if (window.confirm('Delete this note?')) {
             router.delete(route('notes.destroy', id));
@@ -73,10 +77,23 @@ export default function NotesIndex({ notes, page = 1, limit }: NotesIndexProps) 
                         </ul>
                     )}
 
-                    {/* Bounded list (review follow-up): the server caps the page at
-                        `limit` notes; when the page is exactly full, offer the next
-                        slice. The list is newest-first, so older notes sit on page 2+. */}
-                    {limit !== undefined && notes.length >= limit && (
+                    {/* Bounded list (review follow-up, round 2): existence-backed
+                        pager. "Older" renders ONLY when the server says another
+                        page actually exists (hasMore) — not merely because this
+                        page came back full (the last page can be exactly full
+                        and a full-page-only link would dead-end). "Newer" is
+                        symmetric: only when there is a page before this one. */}
+                    {page > 1 && (
+                        <div className="mt-4 flex justify-start">
+                            <a
+                                href={route('notes.index', { page: page - 1 })}
+                                className="text-sm text-indigo-600 hover:underline"
+                            >
+                                ← Newer notes
+                            </a>
+                        </div>
+                    )}
+                    {hasMore && (
                         <div className="mt-4 flex justify-end">
                             <a
                                 href={route('notes.index', { page: page + 1 })}

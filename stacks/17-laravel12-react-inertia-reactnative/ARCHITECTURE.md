@@ -227,6 +227,9 @@ query (`$user->notes()` scope or the owner check in NoteController →
 note ids carry no existence oracle; review follow-up, originally 403
 `FORBIDDEN`). Lists are bounded server-side (`?limit=` default 50 / max
 100 + `?page=`, pagination metadata in the envelope; review follow-up).
+The web list is pager-driven by the same existence-backed flags
+(`total`/`hasMore`): "Older notes" renders only when another page exists,
+"Newer notes" when `page > 1` — a full last page is never a link signal.
 Local/tests run sqlite (`DB_CONNECTION=sqlite`); production target is
 PostgreSQL 17 — no raw sqlite-specific SQL exists in the app code.
 

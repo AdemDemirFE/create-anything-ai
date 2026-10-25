@@ -374,7 +374,10 @@ whole table per request. Fix:
 - Ordering made deterministic: `created_at DESC, id DESC` (id breaks
   same-second ties) on API list, web index, and dashboard recent-notes.
 - The web `Notes/Index.tsx` page accepts the `page`/`limit` props and
-  shows an "Older notes →" link when the page is exactly full.
+  shows an "Older notes →" link ONLY when the server's `hasMore` flag
+  says another page exists, plus a "← Newer notes" back link when
+  `page > 1` (review round 2 — a full LAST page is not a link signal;
+  fullness alone would dead-end).
 - Shared client (`shared/src/api-client.ts`): `listNotes({ page?, limit? })`
   builds the query and refuses invalid/oversized params CLIENT-side
   (`VALIDATION_ERROR` / `INPUT_TOO_LARGE` before any network call);
@@ -442,3 +445,54 @@ metadata, limit=1 + hasMore, page=2 slice, clamp-to-100, foreign-note
 
 All §7 rows stand: RN runtime, PostgreSQL/Redis paths, `php artisan
 serve`, browser e2e. No new unverified areas introduced by this round.
+
+## 10. Review round 2 — web pager existence-backed (REAL, PASSED)
+
+Single review finding on the merged PR #35, applied on a fresh
+`fix/stack-17-notes-index-pagination` branch from post-merge `origin/main`
+(`252086e`).
+
+**Finding:** the web `Notes/Index` page rendered "Older notes →" on EVERY
+full page (`notes.length >= limit` heuristic). A LAST page that happens to
+be exactly full would offer a link to an empty page 2 (dead-end), and
+there was no back link at all.
+
+**Fix:**
+- `NoteController::index` now passes the same existence-backed metadata
+  the API list already uses: `total` (owner-scoped count) and
+  `hasMore` (`page * limit < total`).
+- `Notes/Index.tsx` renders "Older notes →" when-and-only-when
+  `hasMore` is true, and "← Newer notes" when-and-only-when `page > 1`
+  (back link) — fullness alone is no longer a signal. Legacy prop shape
+  (no pagination props) still renders safely without a pager.
+- Tests:
+  - `NoteCrudTest::test_web_notes_index_pager_links_render_by_existence_not_fullness`
+    — decodes the Inertia `data-page` JSON over real requests and pins the
+    prop contract across 4 states: exactly-one-full-page (`hasMore=false`,
+    no dead-end), first-of-two (hasMore true, page 1), last-partial
+    (hasMore false, page 2), middle (both). Inertia pages render
+    client-side, so the served HTML carries PROPS, not links — link
+    rendering is pinned by the jsdom page test.
+  - `pages.test.tsx` "hides the Older link on a full last page..." —
+    renders the component for all 4 states + the legacy prop shape and
+    asserts the exact Newer/Older link visibility (9 → 10 tests).
+
+### Commands and results (this round, all REAL)
+
+```powershell
+php vendor\phpunit\phpunit\phpunit   # → OK (62 tests, 348 assertions), exit 0
+cd ..\shared ; npm.cmd test          # → 17 passed, exit 0 ; tsc clean, exit 0
+cd ..\laravel
+npm.cmd run test                     # page vitest → 10 passed (10), exit 0
+npm.cmd run build                    # → clean, exit 0
+php -l sweep (app, config, routes, tests)  # → all clean
+
+php artisan migrate:fresh --force
+php -S 127.0.0.1:8017 index.php      # from public/, background
+node scripts\smoke.mjs               # → 61/61 checks passed, exit 0
+node scripts\smoke-web.mjs           # → 16/16 checks passed, exit 0
+```
+
+Delta vs the PR #35 round: PHPUnit 61 → 62 tests (330 → 348 assertions),
+page vitest 9 → 10. API smoke and web smoke unchanged (61/61, 16/16).
+No new unverified areas.
