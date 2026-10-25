@@ -24,9 +24,12 @@
  *   spending a bcrypt verification per request. A race test pins that a
  *   20-deep burst against maxFailures=5 yields exactly 5 verifications and
  *   15 immediate 429s.
- * - BOUNDED memory: the tally Map is a bounded LRU (oldest-touched key
- *   evicted past `MAX_ENTRIES`) plus a lazy sweep of expired rows, so a
- *   spray of unique emails/IPs cannot grow the process without bound.
+ * - BOUNDED memory: the tally Map is a true LRU — every access moves its
+ *   key to the back (delete + re-set), eviction takes the front — capped at
+ *   `MAX_ENTRIES`, plus a lazy sweep of expired rows. A spray of unique
+ *   emails/IPs cannot grow the process without bound, and it cannot evict a
+ *   hot, actively-throttled victim key either (review round 2: plain
+ *   insertion-order eviction allowed exactly that).
  */
 import type { Request } from 'express'
 
@@ -62,10 +65,21 @@ export function tallySize(): number {
   return failures.size
 }
 
+function touch(key: string, record: FailureRecord): void {
+  // True LRU touch: Map.set on an EXISTING key keeps its original insertion
+  // position, so a delete + re-set is required to actually move the key to
+  // the back (the newest position). (Review round 2: with insertion-order
+  // eviction a spray of cold keys could evict a hot, actively throttled
+  // victim key that sat near the front of the Map.)
+  failures.delete(key)
+  failures.set(key, record)
+}
+
 function evictColdest(): void {
   if (failures.size < MAX_ENTRIES) return
-  // LRU: every touch re-sets the entry, so Map insertion order agrees with
-  // touchedAt — the first keys iterated are the coldest.
+  // Every access re-positions its key to the back via touch(), so the FRONT
+  // of the Map is genuinely the least-recently-used entry — eviction takes
+  // from there.
   let overflow = failures.size - MAX_ENTRIES + 1
   for (const key of failures.keys()) {
     failures.delete(key)
@@ -145,6 +159,9 @@ export function reserveLogin(
   } else {
     existing.count += 1
     existing.touchedAt = tick()
+    // True LRU touch: move the key to the back on every access so a spray
+    // of cold keys cannot evict a hot, actively-throttled victim.
+    touch(key, existing)
     // The attempt is refused once the count of attempts inside the window
     // exceeds the failure budget (the first maxFailures attempts get their
     // real verdict; everything after is 429 without a bcrypt spend).

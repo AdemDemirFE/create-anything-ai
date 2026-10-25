@@ -16,6 +16,12 @@
  * - The internal queue is bounded (`maxQueueDepth`): when full, submit()
  *   rejects immediately with a QUEUE_FULL error instead of growing without
  *   bound under load (fail fast; the login route maps it to a plain 500).
+ * - Queued calls carry a wait budget (`maxWaitMs`, default 10 s): a call
+ *   that cannot be served within it is rejected with QueueTimeoutError by
+ *   a periodic sweep — a queued task can never wait forever, even if every
+ *   worker dies right after it was enqueued.
+ * - If ALL slots are dead/retired, submit() rejects immediately with
+ *   PoolExhaustedError instead of queueing into a queue nobody drains.
  * - A crashed worker no longer kills the whole pool permanently: only the
  *   tasks dispatched to THAT worker are rejected, the slot is respawned
  *   (up to MAX_RESPAWNS_PER_SLOT against crash loops), and subsequent
@@ -91,21 +97,51 @@ export class QueueFullError extends Error {
   }
 }
 
+/** Thrown when a queued call exceeds its wait budget (fail fast, no silent stalls). */
+export class QueueTimeoutError extends Error {
+  readonly code = 'QUEUE_TIMEOUT'
+  constructor(waitMs: number) {
+    super(`bcrypt pool queue wait exceeded ${waitMs}ms`)
+    this.name = 'QueueTimeoutError'
+  }
+}
+
+/** Thrown when no slot can ever serve the call (all slots dead/retired). */
+export class PoolExhaustedError extends Error {
+  readonly code = 'POOL_EXHAUSTED'
+  constructor() {
+    super('bcrypt pool has no live worker slots')
+    this.name = 'PoolExhaustedError'
+  }
+}
+
 /** Crash-loop guard: a slot is respawned at most this many times. */
 const MAX_RESPAWNS_PER_SLOT = 10
+
+/** Default ceiling on how long a call may sit in the queue before rejection. */
+const DEFAULT_MAX_WAIT_MS = 10_000
+
+interface QueueEntry {
+  task: BcryptTask
+  pending: PendingCall
+  /** Absolute deadline (Date.now() ms) after which the call is rejected. */
+  expiresAt: number
+}
 
 export class BcryptPool {
   private readonly handles: WorkerHandle[] = []
   /** taskId -> call, across all workers (lookup by message id). */
   private readonly pending = new Map<number, PendingCall>()
-  private readonly queue: Array<{ task: BcryptTask; pending: PendingCall }> = []
+  private queue: QueueEntry[] = []
   private nextTaskId = 1
   private disposed = false
+  private sweepTimer: NodeJS.Timeout | null = null
 
   constructor(
     size: number,
     private readonly rounds: number,
     private readonly maxQueueDepth = 256,
+    private readonly maxWaitMs = DEFAULT_MAX_WAIT_MS,
   ) {
     const poolSize = Math.max(1, Math.min(size, os.availableParallelism() * 2))
     for (let i = 0; i < poolSize; i += 1) {
@@ -176,8 +212,43 @@ export class BcryptPool {
     }
   }
 
+  /**
+   * Rejects queued calls whose wait budget ran out and arms/unarms the
+   * periodic sweep accordingly. Bounds both memory AND latency: a caller
+   * never waits longer than maxWaitMs for a slot.
+   */
+  private reapExpired(): void {
+    if (this.queue.length === 0) {
+      if (this.sweepTimer !== null) {
+        clearInterval(this.sweepTimer)
+        this.sweepTimer = null
+      }
+      return
+    }
+    const nowMs = Date.now()
+    const remaining: QueueEntry[] = []
+    for (const entry of this.queue) {
+      if (nowMs >= entry.expiresAt) entry.pending.reject(new QueueTimeoutError(this.maxWaitMs))
+      else remaining.push(entry)
+    }
+    this.queue = remaining
+    if (this.queue.length > 0 && this.sweepTimer === null) {
+      // Check at a fraction of the wait budget so rejections land close to
+      // their deadline even when no drain event fires.
+      this.sweepTimer = setInterval(() => this.reapExpired(), Math.max(50, Math.floor(this.maxWaitMs / 4)))
+      this.sweepTimer.unref?.()
+    } else if (this.queue.length === 0) {
+      this.reapExpired()
+    }
+  }
+
   private submit(task: BcryptTask): Promise<string | boolean> {
     if (this.disposed) return Promise.reject(new Error('bcrypt pool is not available'))
+    if (this.handles.every((candidate) => candidate.dead)) {
+      // No slot can ever serve this call: reject now instead of queueing
+      // into a queue nobody will ever drain (review round 2).
+      return Promise.reject(new PoolExhaustedError())
+    }
     return new Promise((resolve, reject) => {
       if (this.queue.length >= this.maxQueueDepth) {
         // Fail fast rather than accepting unbounded memory growth under load.
@@ -189,7 +260,10 @@ export class BcryptPool {
       if (handle) {
         this.dispatch(handle, task, pending)
       } else {
-        this.queue.push({ task, pending })
+        this.queue.push({ task, pending, expiresAt: Date.now() + this.maxWaitMs })
+        // Arm the latency bound: the queue may now hold a call that could
+        // otherwise wait forever if every slot died right after enqueueing.
+        this.reapExpired()
       }
     })
   }
@@ -210,6 +284,10 @@ export class BcryptPool {
    */
   async dispose(): Promise<void> {
     this.disposed = true
+    if (this.sweepTimer !== null) {
+      clearInterval(this.sweepTimer)
+      this.sweepTimer = null
+    }
     const error = new Error('bcrypt pool disposed')
     for (const call of this.pending.values()) call.reject(error)
     this.pending.clear()
