@@ -1,18 +1,58 @@
 {
   "id": "19-pevn-express-vue3-capacitor",
-  "name": "Pevn / Express / Vue3 / Capacitor",
+  "name": "PEVN / Express / Vue 3 / Capacitor",
   "category": "classic-web",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 19. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Document-store stack reusing the Stack-18 server spine on a different client technology: Express 4 + Mongoose 8 backend (strict allow-listed models, cookie sessions, worker-thread bcrypt, documents CRUD, real in-process Mongo in tests) implemented and tested (vitest unit + supertest integration); Vue 3 + Vite 7 web client on a shared API-client layer implemented and tested; Capacitor 6 thin shell authored over the same shared layer but UNVERIFIED (no Android SDK).",
+  "backend": {
+    "language": "TypeScript",
+    "framework": "Express",
+    "version": "4.21.2"
+  },
+  "web": {
+    "framework": "Vue",
+    "buildTool": "Vite",
+    "version": "3.5.44"
+  },
+  "mobile": {
+    "framework": "Capacitor"
+  },
+  "data": [
+    "MongoDB"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web",
+    "android",
+    "ios"
+  ],
+  "requires": [
+    "Node.js",
+    "MongoDB"
+  ],
+  "versions": {
+    "node": "24",
+    "typescript": "5.9.3",
+    "express": "4.21.2",
+    "mongoose": "8.24.7",
+    "mongodb": "7.0.14",
+    "bcryptjs": "3.0.3",
+    "vue": "3.5.44",
+    "vue-router": "4.5.1",
+    "vite": "7.3.7",
+    "vitest": "2.1.9",
+    "supertest": "7.3.1",
+    "mongodb-memory-server": "10.4.3",
+    "capacitor": "6.2.1"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25T21:10:00Z",
+    "evidencePath": "verification.md"
   }
 }

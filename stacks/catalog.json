@@ -133,7 +133,7 @@
       "id": "19-pevn-express-vue3-capacitor",
       "number": 19,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "20-fastapi-react-vite-pwa",

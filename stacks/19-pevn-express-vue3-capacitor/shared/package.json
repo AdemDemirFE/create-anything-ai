@@ -1,0 +1,19 @@
+{
+  "name": "stack19-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stack 19 shared layer: envelope types + transport-agnostic API client, consumed by BOTH the Vue 3 web app and the Capacitor mobile shell.",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}
