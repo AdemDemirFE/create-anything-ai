@@ -309,7 +309,7 @@ jobs:
             suite: web
             path: stacks/16-laravel12-livewire-alpine-tailwind/laravel
           - stack: 17-laravel12-react-inertia-reactnative
-            suite: web+shared
+            suite: web
             path: stacks/17-laravel12-react-inertia-reactnative/laravel
           - stack: 17-laravel12-react-inertia-reactnative
             suite: shared-ts
@@ -410,6 +410,24 @@ jobs:
         run: |
           python -m pip install "django>=5.2,<6.0"
           python manage.py test -v 1
+
+      - name: Guard — every matrix entry must run a suite
+        # Vacuous-pass guard: a matrix entry whose `suite` value matches no
+        # step condition above would report green after checkout only (the
+        # exact drift the 17/laravel "web+shared" entry produced, caught in
+        # review). This step has no `if`, so it runs for every entry and
+        # fails the job unless one of the suite arms above actually ran.
+        run: |
+          case "${{ matrix.suite }}" in
+            web | shared-ts | server+shared+web | go-test | pytest | django-test)
+              echo "OK: suite '${{ matrix.suite }}' matched a suite arm and ran its steps."
+              ;;
+            *)
+              echo "ERROR: matrix suite '${{ matrix.suite }}' matches no suite arm; this job tested nothing (vacuous pass)."
+              echo "       Add the suite to the matching step conditions above and to this guard."
+              exit 1
+              ;;
+          esac
 
   # Workflow self-validation (TASK-026 item 5): actionlint when available,
   # always a PyYAML syntax parse of every workflow file so a malformed
