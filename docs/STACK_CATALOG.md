@@ -20,13 +20,13 @@ Maturity default for new entries: `proposed`. Promotion follows the maturity lad
 | 12 | `12-firebase-angular-ionic` | baas | `proposed` | Firebase Cloud Functions | Angular 19 | Ionic 8 | Firestore / Firebase Auth |
 | 13 | `13-appwrite-vue3-quasar` | baas | `proposed` | Appwrite | Vue 3 / Quasar | Quasar mobile/desktop packaging | Appwrite storage / database service |
 | 14 | `14-pocketbase-sveltekits-tailwind` | baas | `proposed` | PocketBase | SvelteKit 2 / Tailwind | Svelte PWA | SQLite / realtime |
-| 15 | `15-laravel12-vue3-inertia-flutter` | classic-web | `proposed` | PHP 8.4 / Laravel 12 | Vue 3 / Inertia | Flutter | PostgreSQL 17 / Redis |
-| 16 | `16-laravel12-livewire-alpine-tailwind` | classic-web | `proposed` | PHP 8.4 / Laravel 12 | Livewire 3 / Alpine / Tailwind | PWA | PostgreSQL 17 / MySQL 8.4 |
-| 17 | `17-laravel12-react-inertia-reactnative` | classic-web | `proposed` | PHP 8.4 / Laravel 12 | React 19 / Inertia | React Native / Expo | PostgreSQL 17 / Redis |
+| 15 | `15-laravel12-vue3-inertia-flutter` | classic-web | `scaffolded` | PHP 8.3 / Laravel 12.70 / Inertia 2 | Vue 3.5 / Vite | Flutter (unverified, no SDK) | SQLite (tests) / PostgreSQL 17 (production target) |
+| 16 | `16-laravel12-livewire-alpine-tailwind` | classic-web | `scaffolded` | PHP 8.3 / Laravel 12.70 / Livewire 3 | Alpine 3 / Tailwind 3 (TALL; no SPA) | — | SQLite (tests) / PostgreSQL 17 (production target) |
+| 17 | `17-laravel12-react-inertia-reactnative` | classic-web | `scaffolded` | PHP 8.3 / Laravel 12.70 / Inertia 2 | React 19 / Vite TS | React Native / Expo (unverified, no SDK) | SQLite (tests) / PostgreSQL 17 (production target) |
 | 18 | `18-mern-typescript-express-react-native` | classic-web | `scaffolded` | Node.js 24 / Express 4 TS / Mongoose 8 | React 18 / Vite TS | React Native / Expo TS (unverified, no SDK) | MongoDB 7.0.14 (in-process mongod in tests) |
-| 19 | `19-pevn-express-vue3-capacitor` | classic-web | `proposed` | Node.js 22 / Express TS | Vue 3 / Vite TS | Capacitor 6 (validate maintenance status) | PostgreSQL 17 / Prisma |
+| 19 | `19-pevn-express-vue3-capacitor` | classic-web | `scaffolded` | Node.js 24 / Express 4 TS / Mongoose 8 | Vue 3.5 / Vite 7 TS | Capacitor 6 (unverified, no Android SDK) | MongoDB 7.0.14 (in-process mongod in tests) |
 | 20 | `20-fastapi-react-vite-pwa` | classic-web | `scaffolded` | Python 3.13 / FastAPI 0.129 | React 19 / Vite | PWA (manifest + service worker) | In-memory store |
-| 21 | `21-django5-htmx-alpine-tailwind` | classic-web | `proposed` | Python 3.12 / Django 5.1 | HTMX 2 / Alpine | Responsive web / PWA | PostgreSQL 17 / Redis |
+| 21 | `21-django5-htmx-alpine-tailwind` | classic-web | `scaffolded` | Python 3.13 / Django 5.2 LTS | htmx 2 / Alpine 3 / Tailwind 3 (server-rendered) | — | SQLite (tests/local) |
 | 22 | `22-rails8-hotwire-tailwind-kamal` | classic-web | `proposed` | Ruby 3.4 / Rails 8 | Hotwire / Tailwind | Turbo Native (validate requirements) | PostgreSQL / Kamal |
 | 23 | `23-fastapi-langchain-qdrant-nextjs` | ai-native | `scaffolded` | Python 3.13 / FastAPI / LangChain (fake + OpenAI embeddings; Qdrant client `:memory:` tested) | Next.js 14 | Responsive web | Qdrant (in-memory mode tested; live server unverified) / local-file storage |
 | 24 | `24-springboot-springai-pgvector-react` | ai-native | `proposed` | Spring Boot 3.4 / Spring AI | React 19 / Vite | Web | PostgreSQL 17 / pgvector |
@@ -69,8 +69,8 @@ Counts and number ranges are generated from `stacks/catalog.json` (source of tru
 - Stack IDs are unique and stable.
 - `stacks/catalog.json` is the source of truth; this table should eventually be generated from it. The catalog is validated against `schemas/catalog.schema.json`; the structural rules that JSON Schema cannot express (exactly 40 stacks, unique IDs, contiguous 1–40 numbering, ID/number agreement) are not part of this schema — the catalog validator implements them (tracked in PR #4, feat: generator CLI with tests).
 - Every stack `maturity` must be a member of the catalog's `maturityPolicy` (`proposed`, `spec-ready`, `scaffolded`, `verified`, `production-reference`, `blocked`) and every `category` must be a member of `categoryPolicy`. Both vocabularies are mirrored in the JSON Schemas.
-- Each catalog entry has a `stacks/<id>/stack.json` manifest. Entries still at `proposed` (currently 02–03, 05–07, 09–17, 19, 21–22, 24–34, 37–40) are placeholders that mirror catalog facts (id, category, maturity) with `requires: ["to-be-determined"]`, no technology/platform claims, and all verification gates `false`; specification, environment, and verification content land with each stack's own task. Placeholder discipline is maturity-gated (the validator derives it from `maturity`, not from a hard-coded number range): a manifest must not stay `proposed` once it declares technologies or records verification evidence.
-- Scaffolded stacks carry at least one true verification gate backed by an in-repo evidence file (`evidencePath` → `stacks/<id>/verification.md`). Evidence snapshot per scaffolded stack (copied from the evidence files on 2026-10-25):
+- Each catalog entry has a `stacks/<id>/stack.json` manifest. Entries still at `proposed` (currently 02–03, 05–07, 09–14, 22, 24–34, 37–40) are placeholders that mirror catalog facts (id, category, maturity) with `requires: ["to-be-determined"]`, no technology/platform claims, and all verification gates `false`; specification, environment, and verification content land with each stack's own task. Placeholder discipline is maturity-gated (the validator derives it from `maturity`, not from a hard-coded number range): a manifest must not stay `proposed` once it declares technologies or records verification evidence.
+- Scaffolded stacks carry at least one true verification gate backed by an in-repo evidence file (`evidencePath` → `stacks/<id>/verification.md`). Evidence snapshot per scaffolded stack (copied from the evidence files; 01/04/08/18/20/23/35/36 on 2026-10-25, 15/16/17/19/21 on 2026-10-25 after the wave-5 merges):
   - **01** Java 25 / Spring Boot 4.1: `mvn test` 30/30 (H2+Flyway integration, XFF-throttle regression) + web vitest 13/13 + build; Flutter and compose unverified (no SDK/daemon).
   - **04** Go 1.27 / Fiber v3: `go test ./...` 49 tests green (incl. 16 app integration + live smoke) ; Flutter and compose build unverified.
   - **08** React 18 + supabase-js 2.118: vitest 80/80 (fetch-level fake only) + `tsc` strict build + static RLS auditor; RLS runtime / supabase-local unverified (Docker down).
@@ -79,6 +79,11 @@ Counts and number ranges are generated from `stacks/catalog.json` (source of tru
   - **23** Python 3.13 / FastAPI / LangChain: pytest 74/74 with real qdrant-client `:memory:` pipeline + web vitest 15/15 + `next build`; live Qdrant server / Docker unverified.
   - **35** .NET 10 / SignalR: `dotnet test` 37/37 (hub over TestServer) + web vitest 17/17; Redis backplane + compose unverified.
   - **36** Go 1.27 / gorilla/websocket: `go test ./...` 30 tests green (16 app + 14 ws) + live two-client WS smoke + web vitest 18/18; `go test -race` unverified (no cgo on Windows).
+  - **15** PHP 8.3 / Laravel 12.70 / Inertia 2 + Vue 3.5: `phpunit` 49 tests / 245 assertions + web vitest 7/7 + real-HTTP smoke; Flutter unverified (no SDK).
+  - **16** PHP 8.3 / Laravel 12.70 / Livewire 3 (TALL): `phpunit` 67 tests / 305 assertions (incl. `Livewire::test`) + real-HTTP smoke 67/67 checks; no SPA/client-JS layer.
+  - **17** PHP 8.3 / Laravel 12.70 / Inertia 2 + React 19: `phpunit` 54 tests / 269 assertions + shared vitest 15/15 + laravel vitest 9/9 + API and web smoke scripts; Expo runtime unverified (no SDK).
+  - **19** Node 24 / Express 4 / Mongoose 8 + Vue 3.5: vitest 63/63 (server, real in-process mongod 7.0.14) + shared 15/15 + web 17/17; Capacitor shell unverified (no Android SDK).
+  - **21** Python 3.13 / Django 5.2 LTS: pytest 32/32 over real HTTP (cookie jars, real Set-Cookie) + system-check/migrate + live HTTP smoke; htmx/Alpine vendored, Tailwind pre-built.
 - Version validation must include framework/runtime compatibility, security support window, and platform limitations.
 - If a version is obsolete or incompatible, propose a documented replacement rather than silently changing it.
 - “Production-ready” requires the evidence listed in `docs/QUALITY_GATES.md`.
