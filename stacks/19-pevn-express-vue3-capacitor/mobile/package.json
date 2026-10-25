@@ -1,0 +1,21 @@
+{
+  "name": "stack19-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stack 19 Capacitor mobile shell. THIN WRAPPER over ../shared: all API calls and envelope handling come from the shared layer. NOTE: this app was never executed — the Capacitor/Android toolchain was not exercised in the build environment. Status: UNVERIFIED.",
+  "scripts": {
+    "cap:sync": "cap sync",
+    "cap:add:android": "cap add android",
+    "cap:open:android": "cap open android",
+    "build:web": "cd ../web && npm run build",
+    "copy:web": "node scripts/sync-web.mjs"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.2.1",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@capacitor/android": "6.2.1",
+    "@capacitor/core": "6.2.1"
+  }
+}
