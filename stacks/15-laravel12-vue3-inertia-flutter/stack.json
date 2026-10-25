@@ -1,18 +1,58 @@
 {
   "id": "15-laravel12-vue3-inertia-flutter",
-  "name": "Laravel12 / Vue3 / Inertia / Flutter",
+  "name": "Laravel 12 / Vue 3 / Inertia / Flutter",
   "category": "classic-web",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 15. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Classic web stack: Laravel 12 backend with Inertia 2 + Vue 3 pages (four-screen journey, session-cookie auth, fixed bounded algorithm workbench, /api/v1 JSON envelope with X-Request-Id correlation, failed-login throttle with 429 + Retry-After) implemented and tested (PHPUnit feature suite + real-HTTP smoke script); Flutter mobile client written against the frozen envelope contract but NOT compiled or tested (no Flutter SDK).",
+  "backend": {
+    "language": "PHP",
+    "framework": "Laravel",
+    "version": "12.70.1"
+  },
+  "web": {
+    "framework": "Vue",
+    "buildTool": "Vite",
+    "version": "3.5"
+  },
+  "mobile": {
+    "framework": "Flutter"
+  },
+  "data": [
+    "sqlite (tests/local)",
+    "PostgreSQL 17 (production target)"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web",
+    "android",
+    "ios"
+  ],
+  "requires": [
+    "PHP >= 8.2",
+    "Composer",
+    "Node.js"
+  ],
+  "versions": {
+    "php": "8.3.33",
+    "laravel": "12.70.1",
+    "inertia-laravel": "3.5.2",
+    "vue": "3.5.44",
+    "vite": "8.3.5",
+    "laravel-vite-plugin": "3.2.0",
+    "@inertiajs/vue3": "2.3.29",
+    "tailwindcss": "4.3.3",
+    "phpunit": "11.5.57",
+    "vitest": "5.0.5",
+    "node": "24"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25T00:00:00Z",
+    "evidencePath": "verification.md"
   }
 }

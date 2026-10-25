@@ -1,0 +1,6 @@
+// Flutter artifacts (SDK not present, but keep ignored for future runs)
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+pubspec.lock

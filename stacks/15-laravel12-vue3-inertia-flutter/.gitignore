@@ -1,0 +1,28 @@
+# Frontend build output (vite)
+laravel/public/build/
+laravel/public/hot/
+
+# Local environment + secrets
+.env
+laravel/.env
+laravel/.env.backup
+
+# Dependencies / build caches
+laravel/node_modules/
+laravel/vendor/
+laravel/.phpunit.cache/
+laravel/.phpunit.result.cache
+laravel/npm-debug.log
+laravel/yarn-error.log
+laravel/auth.json
+
+# Local sqlite runtime database
+laravel/database/database.sqlite
+laravel/database/database.sqlite-journal
+
+# Flutter artifacts (SDK not present, but keep ignored for future runs)
+mobile/.dart_tool/
+mobile/build/
+mobile/pubspec.lock
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
