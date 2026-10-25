@@ -19,8 +19,11 @@ use App\Exceptions\ApiException;
  */
 final class AlgorithmEngine
 {
-    /** Hard input bound in characters (documented in ARCHITECTURE.md). */
+    /** Fallback input bound (characters); the effective bound is configurable. */
     public const MAX_INPUT_LENGTH = 10_000;
+
+    /** Hard ceiling for the configured bound (tighten-only safety net). */
+    public const ABSOLUTE_MAX_INPUT_LENGTH = 100_000;
 
     /** @var array<string, array{id: string, label: string, complexity: string, explanation: string}> */
     private const CATALOG = [
@@ -50,6 +53,38 @@ final class AlgorithmEngine
         ],
     ];
 
+    /** The effective input bound this engine instance enforces (characters). */
+    private readonly int $maxInputLength;
+
+    /**
+     * Production resolves config('stack.algorithm_max_input') with a
+     * tighten-only clamp: deployments may LOWER the bound, never raise it
+     * above ABSOLUTE_MAX_INPUT_LENGTH; invalid values fall back to the
+     * MAX_INPUT_LENGTH default. This engine value is the SINGLE source of
+     * truth for the bound: the /api/v1 catalog and the Livewire workbench
+     * both render it, and run() enforces it.
+     */
+    public function __construct(?int $maxInputLength = null)
+    {
+        $configured = $maxInputLength
+            ?? (int) config('stack.algorithm_max_input', self::MAX_INPUT_LENGTH);
+
+        // Tighten-only: a deployment may LOWER the bound via
+        // ALGORITHM_MAX_INPUT, never raise it above the engine's absolute
+        // ceiling. Garbage/zero/negative values fall back to the default.
+        if ($configured < 1 || $configured > self::ABSOLUTE_MAX_INPUT_LENGTH) {
+            $configured = self::MAX_INPUT_LENGTH;
+        }
+
+        $this->maxInputLength = $configured;
+    }
+
+    /** The effective input bound this engine instance enforces. */
+    public function maxInputLength(): int
+    {
+        return $this->maxInputLength;
+    }
+
     /**
      * @return array<int, array{id: string, label: string, complexity: string, explanation: string}>
      */
@@ -67,10 +102,10 @@ final class AlgorithmEngine
             throw new ApiException('UNKNOWN_ALGORITHM', 'The requested algorithm does not exist.', 400);
         }
 
-        if (mb_strlen($input) > self::MAX_INPUT_LENGTH) {
+        if (mb_strlen($input) > $this->maxInputLength) {
             throw new ApiException(
                 'INPUT_TOO_LARGE',
-                'Input exceeds the maximum of '.self::MAX_INPUT_LENGTH.' characters.',
+                'Input exceeds the maximum of '.$this->maxInputLength.' characters.',
                 400,
             );
         }
@@ -78,7 +113,9 @@ final class AlgorithmEngine
         $started = hrtime(true);
 
         $output = match ($id) {
-            'reverse' => strrev($input),
+            // mb-safe: reverses by CODE POINT, so multi-byte characters stay
+            // intact (strrev would shred them byte-wise).
+            'reverse' => implode('', array_reverse(preg_split('//u', $input, -1, PREG_SPLIT_NO_EMPTY) ?: [])),
             'word-count' => (string) str_word_count($input),
             'fizzbuzz' => $this->fizzbuzz($this->parseBound($input)),
             'palindrome' => $this->palindrome($input) ? 'true' : 'false',
@@ -114,7 +151,14 @@ final class AlgorithmEngine
     {
         $normalized = mb_strtolower(preg_replace('/[^a-z0-9]/i', '', $input) ?? '');
 
-        return $normalized !== '' && $normalized === strrev($normalized);
+        if ($normalized === '') {
+            return false;
+        }
+
+        // mb-safe reverse (code points), mirroring the `reverse` algorithm.
+        $reversed = implode('', array_reverse(preg_split('//u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: []));
+
+        return $normalized === $reversed;
     }
 
     /**

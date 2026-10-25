@@ -158,11 +158,20 @@ Login limiter semantics (all test-asserted):
   process execution; source-scanned by test).
 - Input is DATA, bounded at 10,000 chars (`ALGORITHM_MAX_INPUT`, tighten-only
   in deployments): oversized input → 400 `INPUT_TOO_LARGE`, never truncated.
+  **The engine is the single source of truth for the bound**: it resolves
+  `config('stack.algorithm_max_input')` in its constructor (lowering
+  allowed, raising clamped to `ABSOLUTE_MAX_INPUT_LENGTH`, invalid values
+  fall back to the 10,000 default), enforces it in `run()`, and both the
+  `/api/v1` catalog field and the Livewire workbench render the same
+  engine-resolved number (contract-tested).
 - Measured duration (`hrtime`, monotonic) and the static Big-O note are
   separate result fields; measured time is never presented as complexity.
 - Livewire-specific: `algorithmId` is `#[Locked]` — the browser cannot
   rebind it to an arbitrary value between requests; the run action
   re-validates it against the catalog server-side.
+- The `reverse` algorithm (and the palindrome check) reverse by CODE POINT
+  (`preg_split('//u')` + `array_reverse`), not byte-wise `strrev`, so
+  multi-byte UTF-8 round-trips intact (test-asserted).
 
 ### 3.5 Never leaked to clients
 
@@ -190,6 +199,10 @@ have:
   catalog on every run.
 - Server-side validation re-runs on every action; `wire:model.live` is a
   convenience, never a trust boundary.
+- Notes search: the user term is a LITERAL substring — LIKE wildcards in
+  it (`%`, `_`, `\`) are escaped via `addcslashes` and the `ESCAPE`
+  character is passed as a SQL binding, so `50% off` matches `50% off`,
+  not every row containing `50<anything>` (test-asserted).
 
 ## 4. Data model
 
@@ -225,7 +238,7 @@ sqlite-specific SQL exists in the app code.
 
 ## 6. Verification entry points
 
-- `laravel/` — PHPUnit feature suite (63 tests, 290 assertions; includes
+- `laravel/` — PHPUnit feature suite (67 tests, 305 assertions; includes
   17 `Livewire::test()` component tests), `php -l` clean.
 - `laravel/scripts/smoke.mjs` — real-HTTP contract walk (67 checks):
   register/login/CRUD/403/throttle/429+Retry-After/request-id echo/CSRF

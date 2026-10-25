@@ -44,9 +44,9 @@ class AlgorithmController extends Controller
         return Envelope::ok($request, $result);
     }
 
-    /** Tighten-only env override shared with the Livewire workbench. */
+    /** Tighten-only env override, resolved by the engine (single source). */
     public static function maxInputLength(): int
     {
-        return (int) config('stack.algorithm_max_input', AlgorithmEngine::MAX_INPUT_LENGTH);
+        return app(AlgorithmEngine::class)->maxInputLength();
     }
 }
