@@ -153,6 +153,47 @@ describe('NotesIndex', () => {
         expect(deleteMock).toHaveBeenCalledWith('/notes/destroy/5');
         confirmSpy.mockRestore();
     });
+
+    // Review round 2: the pager is EXISTENCE-backed — "Older notes" renders
+    // when-and-only-when hasMore is true (a full last page must NOT dead-end),
+    // "Newer notes" when-and-only-when page > 1.
+    it('hides the Older link on a full last page and shows it only when hasMore', () => {
+        const notes = [
+            { id: 1, title: 'A', body: null },
+            { id: 2, title: 'B', body: null },
+        ];
+
+        // Exactly one FULL page (2 of 2 notes, page 1 of 1): no pager at all.
+        const unmount1 = render(<NotesIndex notes={notes} page={1} limit={2} total={2} hasMore={false} />).unmount;
+        expect(screen.queryByText('Older notes →')).toBeNull();
+        expect(screen.queryByText('← Newer notes')).toBeNull();
+        unmount1();
+
+        // First page with more data beyond: Older only.
+        const unmount2 = render(<NotesIndex notes={notes} page={1} limit={2} total={5} hasMore />).unmount;
+        expect(screen.getByText('Older notes →')).toBeTruthy();
+        expect(screen.queryByText('← Newer notes')).toBeNull();
+        unmount2();
+
+        // Last page (partial): Newer only.
+        const unmount3 = render(
+            <NotesIndex notes={[{ id: 5, title: 'E', body: null }]} page={2} limit={2} total={3} hasMore={false} />,
+        ).unmount;
+        expect(screen.getByText('← Newer notes')).toBeTruthy();
+        expect(screen.queryByText('Older notes →')).toBeNull();
+        unmount3();
+
+        // Middle page: both.
+        const unmount4 = render(<NotesIndex notes={notes} page={2} limit={2} total={5} hasMore />).unmount;
+        expect(screen.getByText('← Newer notes')).toBeTruthy();
+        expect(screen.getByText('Older notes →')).toBeTruthy();
+        unmount4();
+
+        // Legacy prop shape (no pagination props at all): no pager, no crash.
+        render(<NotesIndex notes={notes} />);
+        expect(screen.queryByText('Older notes →')).toBeNull();
+        expect(screen.queryByText('← Newer notes')).toBeNull();
+    });
 });
 
 describe('Algorithm workbench', () => {

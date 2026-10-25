@@ -230,6 +230,63 @@ class NoteCrudTest extends TestCase
         $this->assertStringContainsString('"limit":2', $content);
     }
 
+    /**
+     * Review round 2: the web pager must be EXISTENCE-backed, not
+     * full-page-backed. "Older notes" renders when-and-only-when
+     * hasMore is true; "Newer notes" when-and-only-when page > 1. The
+     * old full-page heuristic dead-ended when the LAST page happened
+     * to be exactly full.
+     *
+     * Note: Inertia pages render client-side, so the served HTML carries
+     * the PROPS in the data-page JSON — the assertions below decode that
+     * JSON and verify the exact prop contract the React page keys its
+     * Newer/Older links on (the link rendering itself is pinned by the
+     * jsdom page test, which renders the component for real).
+     */
+    public function test_web_notes_index_pager_links_render_by_existence_not_fullness(): void
+    {
+        $user = User::factory()->create();
+        // Exactly ONE full page: 2 notes with limit=2. The page comes back
+        // FULL, but there is no page 2 — hasMore must be false so the
+        // "Older notes" link never renders (no dead-end).
+        Note::factory()->count(2)->create(['user_id' => $user->id]);
+
+        $props = function (string $html): array {
+            // Extract the data-page JSON script payload (props contract).
+            $this->assertMatchesRegularExpression('/<script data-page="app" type="application\/json">(.*?)<\/script>/s', $html, 'Inertia data-page payload must be present.');
+            preg_match('/<script data-page="app" type="application\/json">(.*?)<\/script>/s', $html, $m);
+
+            return json_decode(htmlspecialchars_decode($m[1], ENT_QUOTES | ENT_HTML5), true)['props'];
+        };
+
+        $onlyPage = $this->actingAs($user)->get('/notes?limit=2&page=1')->assertOk();
+        $data = $props($onlyPage->getContent() ?: '');
+        $this->assertFalse($data['hasMore'], 'A full LAST page must not signal hasMore (no "Older notes" dead-end).');
+        $this->assertSame(2, $data['total']);
+        $this->assertSame(1, $data['page']);
+
+        // More data: page 1 of 2 (limit=2, 3 notes) → hasMore true, page 1
+        // (so the React page renders "Older" only, never "Newer").
+        Note::factory()->create(['user_id' => $user->id]);
+        $firstPage = $props($this->actingAs($user)->get('/notes?limit=2&page=1')->assertOk()->getContent() ?: '');
+        $this->assertTrue($firstPage['hasMore']);
+        $this->assertSame(3, $firstPage['total']);
+
+        // Last page (2 of 2, partial) → hasMore false, page 2 (renders
+        // "Newer" only).
+        $lastPage = $props($this->actingAs($user)->get('/notes?limit=2&page=2')->assertOk()->getContent() ?: '');
+        $this->assertFalse($lastPage['hasMore']);
+        $this->assertSame(2, $lastPage['page']);
+
+        // Middle page of 3 (limit=2, 5 notes: 2+1+2 created above) → hasMore
+        // true AND page 2 > 1 (renders BOTH links).
+        Note::factory()->count(2)->create(['user_id' => $user->id]);
+        $middlePage = $props($this->actingAs($user)->get('/notes?limit=2&page=2')->assertOk()->getContent() ?: '');
+        $this->assertTrue($middlePage['hasMore']);
+        $this->assertSame(2, $middlePage['page']);
+        $this->assertSame(5, $middlePage['total']);
+    }
+
     public function test_web_notes_index_shows_only_own_notes(): void
     {
         $user = User::factory()->create();

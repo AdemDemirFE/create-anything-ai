@@ -35,7 +35,10 @@ class NoteController extends Controller
         // client's perspective (limit above 100 clamps to 100).
         [$page, $limit] = $this->listBounds($request);
 
-        $notes = Auth::user()->notes()
+        $user = Auth::user();
+        $total = (int) $user->notes()->count();
+
+        $notes = $user->notes()
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->skip(($page - 1) * $limit)
@@ -46,6 +49,12 @@ class NoteController extends Controller
             'notes' => $notes,
             'page' => $page,
             'limit' => $limit,
+            // Existence-backed pager flags (review round 2): the view renders
+            // "Newer/Older notes" links when-and-only-when they lead to a real
+            // page — a full page is NOT sufficient signal (the last page can
+            // be exactly full and "Older" would dead-end).
+            'total' => $total,
+            'hasMore' => $page * $limit < $total,
         ]);
     }
 
