@@ -109,13 +109,13 @@
       "id": "15-laravel12-vue3-inertia-flutter",
       "number": 15,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "16-laravel12-livewire-alpine-tailwind",
       "number": 16,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "17-laravel12-react-inertia-reactnative",
