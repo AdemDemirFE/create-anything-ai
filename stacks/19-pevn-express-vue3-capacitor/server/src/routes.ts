@@ -13,7 +13,7 @@ import { performance } from 'node:perf_hooks'
 import * as codes from './error-codes.js'
 import { envelopeError, envelopeOk, validationError } from './envelope.js'
 import { User, StackDocument, toPublicDocument, toPublicUser, type DocumentDoc, type UserDoc } from './models.js'
-import { BcryptPool } from './security/bcrypt-pool.js'
+import { BcryptPool, QueueFullError } from './security/bcrypt-pool.js'
 import {
   attachSessionCookie,
   createSession,
@@ -21,7 +21,7 @@ import {
   destroySession,
   type SessionConfig,
 } from './security/sessions.js'
-import { clearFailures, clientIp, isThrottled, recordFailure, type ThrottleConfig } from './security/throttle.js'
+import { clearFailures, clientIp, reserveLogin, type LoginReservation, type ThrottleConfig } from './security/throttle.js'
 import { normalizeEmail } from './validation.js'
 import { CATALOG, InputTooLargeError, InvalidInputError, MAX_INPUT_LENGTH, UnknownAlgorithmError, runAlgorithm } from './algorithm/catalog.js'
 
@@ -142,6 +142,9 @@ export function buildRouter(deps: Deps): express.Router {
 
   // --- login (public, throttled) ----------------------------------------------
   router.post('/login', (req, res, next) => {
+    // Declared OUTSIDE the try block so the QUEUE_FULL catch below can reach
+    // it (block scope: a let inside try is invisible to its own catch).
+    let reservation: LoginReservation | undefined
     void (async () => {
       try {
         const { value, issues } = parseCredentials(req.body)
@@ -152,7 +155,14 @@ export function buildRouter(deps: Deps): express.Router {
         const email = normalizeEmail(value.email)
         const ip = clientIp(req)
 
-        if (isThrottled(email, ip, throttleConfig)) {
+        // ATOMIC throttle reservation (review follow-up): the check and the
+        // attempt accounting happen in one synchronous step BEFORE any
+        // await, so a concurrent burst cannot all pass the old isThrottled /
+        // recordFailure bracket — the reservation is immediately visible to
+        // every subsequent request. Throttled callers are refused WITHOUT
+        // spending a bcrypt verification.
+        reservation = reserveLogin(email, ip, throttleConfig)
+        if (reservation.throttled) {
           // Retry-After is its own config knob (Stack-18/20 lesson) — it may
           // differ from the window length.
           res.setHeader('Retry-After', String(config.throttleRetryAfterSeconds))
@@ -160,20 +170,30 @@ export function buildRouter(deps: Deps): express.Router {
           return
         }
 
-        const user = (await User.findOne({ email })) as unknown as UserDoc | null
+        let user: UserDoc | null
+        try {
+          user = (await User.findOne({ email })) as unknown as UserDoc | null
+        } catch (err) {
+          // Infrastructure failure is not a login failure: refund the slot
+          // so DB outages do not burn the failure budget (review follow-up).
+          reservation.release()
+          throw err
+        }
         if (!user) {
           // Unknown email: burn one bcrypt verification against a fixed
           // non-secret throwaway hash so response timing does not reveal
-          // whether the account exists. Failures count toward the throttle.
-          await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
-          recordFailure(email, ip, throttleConfig)
+          // whether the account exists. The reserved slot counts as the
+          // failure — the old post-await recordFailure call (racy) is gone.
+          void bcryptPool
+            .verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
+            .catch(() => {})
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
 
         const ok = await bcryptPool.verifyPassword(value.password, user.passwordHash)
         if (!ok) {
-          recordFailure(email, ip, throttleConfig)
+          // Failure: the reserved slot stays spent.
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
@@ -185,6 +205,15 @@ export function buildRouter(deps: Deps): express.Router {
         attachSessionCookie(res, token, sessionConfig)
         envelopeOk(res, { user: toPublicUser(user) })
       } catch (err) {
+        // A full bcrypt queue is load, not a bug (review follow-up): answer
+        // with 503 + Retry-After so clients back off, and refund the
+        // reserved slot — the attempt never reached a real verdict.
+        if (err instanceof QueueFullError) {
+          reservation?.release()
+          res.setHeader('Retry-After', String(config.throttleRetryAfterSeconds))
+          envelopeError(res, 503, codes.RATE_LIMITED, 'Server is busy. Try again shortly.')
+          return
+        }
         next(err)
       }
     })()
