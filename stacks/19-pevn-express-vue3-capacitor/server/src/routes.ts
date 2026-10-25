@@ -13,7 +13,12 @@ import { performance } from 'node:perf_hooks'
 import * as codes from './error-codes.js'
 import { envelopeError, envelopeOk, validationError } from './envelope.js'
 import { User, StackDocument, toPublicDocument, toPublicUser, type DocumentDoc, type UserDoc } from './models.js'
-import { BcryptPool, QueueFullError } from './security/bcrypt-pool.js'
+import {
+  BcryptPool,
+  PoolExhaustedError,
+  QueueFullError,
+  QueueTimeoutError,
+} from './security/bcrypt-pool.js'
 import {
   attachSessionCookie,
   createSession,
@@ -72,13 +77,37 @@ export function isDuplicateKeyError(err: unknown): boolean {
   return e.code === 11000 || e.code === 11001 || e.codeName === 'DuplicateKey'
 }
 
-/** A fixed non-secret throwaway hash, computed once, for timing equalization. */
-let timingEqualizerHash: string | null = null
-async function getTimingEqualizerHash(pool: BcryptPool): Promise<string> {
-  if (timingEqualizerHash === null) {
-    timingEqualizerHash = await pool.hashPassword('timing-equalizer-throwaway', 10)
+/**
+ * A fixed non-secret throwaway hash for timing equalization, cached PER
+ * (pool, rounds) pair. The rounds MUST be the same `config.bcryptRounds`
+ * used for real user hashes (review round 3): a cheaper equalizer (the old
+ * hard-coded 10) makes unknown-email compares ~4x faster than known-email
+ * ones at the default 12 — a smaller but still real enumeration oracle.
+ * Keying by pool instance too keeps multiple routers (tests) from sharing
+ * a hash across differently-configured pools.
+ */
+const timingEqualizerHashes = new WeakMap<BcryptPool, Map<number, string>>()
+async function getTimingEqualizerHash(pool: BcryptPool, rounds: number): Promise<string> {
+  let byRounds = timingEqualizerHashes.get(pool)
+  if (!byRounds) {
+    byRounds = new Map<number, string>()
+    timingEqualizerHashes.set(pool, byRounds)
   }
-  return timingEqualizerHash
+  let hash = byRounds.get(rounds)
+  if (hash === undefined) {
+    hash = await pool.hashPassword('timing-equalizer-throwaway', rounds)
+    byRounds.set(rounds, hash)
+  }
+  return hash
+}
+
+/**
+ * Test-only view of the equalizer: returns (computing if needed) the hash
+ * the unknown-email login path verifies against, so tests can pin its cost
+ * factor to config.bcryptRounds. Not used by route handling.
+ */
+export async function getTimingEqualizerHashForTest(pool: BcryptPool, rounds: number): Promise<string> {
+  return getTimingEqualizerHash(pool, rounds)
 }
 
 export function buildRouter(deps: Deps): express.Router {
@@ -182,11 +211,13 @@ export function buildRouter(deps: Deps): express.Router {
         if (!user) {
           // Unknown email: burn one bcrypt verification against a fixed
           // non-secret throwaway hash so response timing does not reveal
-          // whether the account exists. The reserved slot counts as the
-          // failure — the old post-await recordFailure call (racy) is gone.
-          void bcryptPool
-            .verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool))
-            .catch(() => {})
+          // whether the account exists. The verification is AWAITED — a
+          // fire-and-forget call would make unknown-email responses return
+          // ~immediately while known-email responses wait for the real
+          // compare, re-creating the enumeration oracle this hash exists to
+          // prevent (Stack-20 timing-parity lesson; review round 2). The
+          // reserved slot counts as the failure.
+          await bcryptPool.verifyPassword(value.password, await getTimingEqualizerHash(bcryptPool, config.bcryptRounds))
           envelopeError(res, 401, codes.INVALID_CREDENTIALS, 'Invalid email or password.')
           return
         }
@@ -205,10 +236,12 @@ export function buildRouter(deps: Deps): express.Router {
         attachSessionCookie(res, token, sessionConfig)
         envelopeOk(res, { user: toPublicUser(user) })
       } catch (err) {
-        // A full bcrypt queue is load, not a bug (review follow-up): answer
-        // with 503 + Retry-After so clients back off, and refund the
-        // reserved slot — the attempt never reached a real verdict.
-        if (err instanceof QueueFullError) {
+        // Pool saturation is load, not a bug (review follow-up): answer with
+        // 503 + Retry-After so clients back off, and refund the reserved
+        // slot — the attempt never reached a real verdict. Covers all three
+        // saturation shapes: bounded-queue overflow, a queued call whose
+        // wait budget expired, and a pool whose slots all died.
+        if (err instanceof QueueFullError || err instanceof QueueTimeoutError || err instanceof PoolExhaustedError) {
           reservation?.release()
           res.setHeader('Retry-After', String(config.throttleRetryAfterSeconds))
           envelopeError(res, 503, codes.RATE_LIMITED, 'Server is busy. Try again shortly.')
