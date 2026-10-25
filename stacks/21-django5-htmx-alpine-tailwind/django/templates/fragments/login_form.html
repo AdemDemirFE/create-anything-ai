@@ -1,0 +1,28 @@
+{# Fragment target for the login screen: swapped on 422 AND 429 (htmx-config). #}
+<form id="login-form" hx-post="{% url 'core:login' %}" hx-swap="outerHTML" hx-target="#login-form" method="post" action="{% url 'core:login' %}" novalidate>
+  {% csrf_token %}
+  {% if throttled %}
+    <div role="alert" class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+      Too many attempts. Try again in {{ retry_after }}s.
+    </div>
+  {% elif form.non_field_errors %}
+    <div role="alert" class="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900">
+      {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+  <div class="mb-4">
+    <label for="{{ form.email.id_for_label }}" class="mb-1 block text-sm font-medium">{{ form.email.label }}</label>
+    {{ form.email }}
+    {% if form.email.errors %}
+      <p class="field-error mt-1 text-sm text-red-700" role="alert">{% for error in form.email.errors %}{{ error }} {% endfor %}</p>
+    {% endif %}
+  </div>
+  <div class="mb-6">
+    <label for="{{ form.password.id_for_label }}" class="mb-1 block text-sm font-medium">{{ form.password.label }}</label>
+    {{ form.password }}
+    {% if form.password.errors %}
+      <p class="field-error mt-1 text-sm text-red-700" role="alert">{% for error in form.password.errors %}{{ error }} {% endfor %}</p>
+    {% endif %}
+  </div>
+  <button type="submit" class="w-full rounded-md bg-slate-800 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-50">Log in</button>
+</form>

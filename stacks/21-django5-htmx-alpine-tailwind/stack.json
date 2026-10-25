@@ -2,17 +2,43 @@
   "id": "21-django5-htmx-alpine-tailwind",
   "name": "Django5 / Htmx / Alpine / Tailwind",
   "category": "classic-web",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 21. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Batteries-included server-rendered stack: Django 5.2 LTS (Python 3.13) owns the ORM/migrations, auto-generated admin (paradigm showcase), declarative forms, and the full session auth machinery (HttpOnly SameSite cookie, server-side revocation, fixation-safe login); htmx 2 partial responses drive the four screens with the Stack-04 htmx-config lesson applied (422/429 bodies swap); a custom in-process failed-login throttle returns 429 + Retry-After with trusted-proxy-aware client-IP resolution; the /api/v1 JSON surface uses the {ok,data,error,requestId} envelope with validated X-Request-Id echo; Tailwind 3.4 is pre-built and committed (no runtime CDN) and htmx/Alpine are vendored.",
+  "backend": {
+    "language": "Python",
+    "framework": "Django",
+    "version": "5.2.18"
+  },
+  "web": {
+    "framework": "Django templates + htmx + Alpine",
+    "buildTool": "tailwindcss CLI 3.4.17",
+    "version": "htmx 2.0.4 / Alpine 3.14.9"
+  },
+  "data": [
+    "sqlite"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web"
+  ],
+  "requires": [
+    "Python 3.13"
+  ],
+  "versions": {
+    "python": "3.13.2",
+    "django": "5.2.18",
+    "htmx": "2.0.4",
+    "alpine": "3.14.9",
+    "tailwindcss-cli": "3.4.17"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25T00:30:00Z",
+    "evidencePath": "verification.md"
   }
 }

@@ -145,7 +145,7 @@
       "id": "21-django5-htmx-alpine-tailwind",
       "number": 21,
       "category": "classic-web",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "22-rails8-hotwire-tailwind-kamal",

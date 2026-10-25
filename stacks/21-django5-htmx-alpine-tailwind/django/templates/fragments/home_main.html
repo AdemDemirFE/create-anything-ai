@@ -1,0 +1,57 @@
+<section aria-label="Profile and metrics">
+  <div class="mb-8">
+    <h1 class="text-2xl font-semibold">Welcome, {{ user.email }}</h1>
+    <p class="mt-1 text-sm text-slate-600">Authenticated via the Django session cookie (HttpOnly, SameSite=Lax).</p>
+  </div>
+
+  <div class="mb-8 grid grid-cols-2 gap-4" data-testid="metrics">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <p class="text-sm text-slate-600">Notes</p>
+      <p class="text-2xl font-semibold">{{ metrics.noteCount }}</p>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <p class="text-sm text-slate-600">Algorithms available</p>
+      <p class="text-2xl font-semibold">{{ metrics.algorithmCount }}</p>
+    </div>
+  </div>
+
+  <h2 class="mb-3 text-lg font-semibold">Notes <span class="text-sm font-normal text-slate-500">(Django ORM CRUD, swapped via htmx)</span></h2>
+
+  <form hx-post="{% url 'core:note-create' %}" hx-target="#home-main" hx-swap="outerHTML" method="post" action="{% url 'core:note-create' %}" class="mb-6 rounded-lg border border-slate-200 bg-white p-4" novalidate>
+    {% csrf_token %}
+    {% if note_form.non_field_errors %}
+      <div role="alert" class="mb-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">{% for error in note_form.non_field_errors %}<p>{{ error }}</p>{% endfor %}</div>
+    {% endif %}
+    <div class="mb-3">
+      <label for="{{ note_form.title.id_for_label }}" class="mb-1 block text-sm font-medium">{{ note_form.title.label }}</label>
+      {{ note_form.title }}
+      {% if note_form.title.errors %}<p class="field-error mt-1 text-sm text-red-700" role="alert">{% for error in note_form.title.errors %}{{ error }} {% endfor %}</p>{% endif %}
+    </div>
+    <div class="mb-3">
+      <label for="{{ note_form.body.id_for_label }}" class="mb-1 block text-sm font-medium">{{ note_form.body.label }}</label>
+      {{ note_form.body }}
+      {% if note_form.body.errors %}<p class="field-error mt-1 text-sm text-red-700" role="alert">{% for error in note_form.body.errors %}{{ error }} {% endfor %}</p>{% endif %}
+    </div>
+    <button type="submit" class="rounded-md bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50">Add note</button>
+  </form>
+
+  {% if notes %}
+    <ul class="space-y-2" data-testid="note-list">
+      {% for note in notes %}
+        <li class="flex items-start justify-between rounded-lg border border-slate-200 bg-white p-4">
+          <div>
+            <p class="font-medium">{{ note.title }}</p>
+            {% if note.body %}<p class="mt-1 text-sm text-slate-600">{{ note.body }}</p>{% endif %}
+            <p class="mt-1 text-xs text-slate-400">{{ note.created_at|date:"Y-m-d H:i" }}</p>
+          </div>
+          <button hx-post="{% url 'core:note-delete' note.pk %}" hx-target="#home-main" hx-swap="outerHTML" hx-confirm="Delete this note?"
+                  class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100">Delete</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500" data-testid="notes-empty">
+      No notes yet — add your first note above.
+    </div>
+  {% endif %}
+</section>

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Home — Stack 21{% endblock %}
+{% block content %}
+  <div id="home-main" hx-get="{% url 'core:home' %}" hx-trigger="refresh-home from:body" hx-swap="outerHTML" hx-target="#home-main">
+    {% include "fragments/home_main.html" %}
+  </div>
+{% endblock %}

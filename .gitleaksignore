@@ -1,0 +1,10 @@
+# False positive: dummy wrong-password fixture used by the Stack 21 live smoke
+# script (smoke.py). It is an intentionally invalid credential for testing the
+# 401 login path, not a secret. Entropy 3.5216 barely crosses gitleaks' 3.5
+# generic-api-key threshold. The head commit already replaced the fixture with
+# a lower-entropy one; this entry silences the historical diff line.
+d6e9e053c6e1c38e8c6810ce595a7596f80693f2:stacks/21-django5-htmx-alpine-tailwind/django/smoke.py:generic-api-key:193
+# Second false positive: 'Other-Horse-12x' fixture (entropy 3.5069, marginally
+# over the 3.5 generic-api-key threshold) introduced in 767f93c and replaced by
+# the proven-safe 'Correct-Horse-9x' in the head.
+767f93c548ebbbf6efbed1cd5a3de0ccb181f713:stacks/21-django5-htmx-alpine-tailwind/django/smoke.py:generic-api-key:277
