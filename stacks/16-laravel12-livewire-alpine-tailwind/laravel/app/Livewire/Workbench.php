@@ -46,7 +46,8 @@ class Workbench extends Component
 
     public function getMaxInputLengthProperty(): int
     {
-        return (int) config('stack.algorithm_max_input', AlgorithmEngine::MAX_INPUT_LENGTH);
+        // Single source of truth: the engine resolves + clamps the config.
+        return app(AlgorithmEngine::class)->maxInputLength();
     }
 
     public function run(): void
