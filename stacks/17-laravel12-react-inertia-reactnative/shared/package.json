@@ -1,0 +1,19 @@
+{
+  "name": "stack17-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stack 17 shared layer: transport-agnostic API client + envelope normalization, used by BOTH the React (Inertia) web app and the React Native (Expo) thin shell.",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  },
+  "allowScripts": {
+    "esbuild@0.24.0": true
+  }
+}
