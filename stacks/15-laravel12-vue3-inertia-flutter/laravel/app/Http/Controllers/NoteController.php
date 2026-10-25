@@ -71,13 +71,6 @@ class NoteController extends Controller
         return redirect()->route('notes.show', $note)->with('status', 'Note created.');
     }
 
-    public function showApi(Request $request, Note $note): JsonResponse
-    {
-        $this->authorizeOwner($request, $note);
-
-        return Envelope::ok($request, ['note' => $note->only(['id', 'title', 'body', 'created_at', 'updated_at'])]);
-    }
-
     public function update(Request $request, Note $note): RedirectResponse|JsonResponse
     {
         $this->authorizeOwner($request, $note);
@@ -102,14 +95,6 @@ class NoteController extends Controller
         }
 
         return redirect()->route('notes.index')->with('status', 'Note deleted.');
-    }
-
-    /**
-     * API surface for the detail screen: { note: {...} } envelope data.
-     */
-    public function showJson(Request $request, Note $note): JsonResponse
-    {
-        return $this->showApi($request, $note);
     }
 
     /**
