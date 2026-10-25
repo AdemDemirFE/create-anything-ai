@@ -26,9 +26,9 @@ class ApiMiddlewareWiringTest extends TestCase
 
         $this->assertNotNull($route, 'Route api.register must exist (mounted from routes/api.php).');
         $this->assertSame(
-            ['api'],
+            ['api', 'throttle:auth-ip'],
             $route->middleware(),
-            '/api/v1 routes must be in the api group only, never the web group.'
+            'Unauthenticated auth routes run in the api group plus the per-IP auth throttle, never the web group.'
         );
         $this->assertNotContains(
             ValidateCsrfToken::class,
@@ -40,6 +40,23 @@ class ApiMiddlewareWiringTest extends TestCase
             $this->expandedStack($route),
             'throttle:api must guard /api/v1 (coarse infrastructure limiter).'
         );
+    }
+
+    public function test_data_api_routes_stay_in_the_plain_api_group(): void
+    {
+        // Authenticated data routes must NOT carry the auth-ip throttle —
+        // that budget is scoped to the unauthenticated auth endpoints only.
+        // (The `auth` middleware is the group's session guard, expected here.)
+        foreach (['api.notes.index', 'api.notes.store', 'api.algorithm.run', 'api.logout'] as $name) {
+            $route = Route::getRoutes()->getByName($name);
+
+            $this->assertNotNull($route, "Route {$name} must exist.");
+            $this->assertSame(
+                ['api', 'auth'],
+                $route->middleware(),
+                "/api/v1 data routes must run the api group + auth only, never the auth-ip throttle ({$name})."
+            );
+        }
     }
 
     public function test_write_api_routes_exist_and_are_post_or_put_or_delete(): void
@@ -65,6 +82,37 @@ class ApiMiddlewareWiringTest extends TestCase
             ValidateCsrfToken::class,
             $this->expandedStack($route),
             'Inertia form posts (React pages) must keep CSRF protection.'
+        );
+    }
+
+    /**
+     * Review follow-up: the unauthenticated auth endpoints carry the
+     * per-IP `throttle:auth-ip` middleware (in addition to the group-wide
+     * throttle:api), so credential stuffing / bulk registration from one
+     * address is bounded independently of the email+IP failed-login
+     * limiter.
+     */
+    public function test_auth_endpoints_carry_the_per_ip_throttle(): void
+    {
+        foreach (['api.register', 'api.login'] as $name) {
+            $route = Route::getRoutes()->getByName($name);
+
+            $this->assertNotNull($route, "Route {$name} must exist.");
+            $this->assertContains(
+                'throttle:auth-ip',
+                $route->middleware(),
+                "{$name} must be guarded by throttle:auth-ip (per-IP budget for unauthenticated auth)."
+            );
+        }
+
+        // ...and other routes must NOT carry it (the budget is scoped to
+        // the unauthenticated auth surface only):
+        $notesRoute = Route::getRoutes()->getByName('api.notes.index');
+        $this->assertNotNull($notesRoute);
+        $this->assertNotContains(
+            'throttle:auth-ip',
+            $notesRoute->middleware(),
+            'Authenticated data routes must not consume the auth-ip budget.'
         );
     }
 

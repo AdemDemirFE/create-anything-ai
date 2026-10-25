@@ -6,7 +6,7 @@
  * see ../mobile/README.md and stacks/17-.../verification.md.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiClient, MAX_ALGORITHM_INPUT_LENGTH, MAX_NOTE_BODY_LENGTH, MAX_NOTE_TITLE_LENGTH } from './api-client.js'
+import { ApiClient, MAX_ALGORITHM_INPUT_LENGTH, MAX_NOTE_BODY_LENGTH, MAX_NOTE_TITLE_LENGTH, NOTES_MAX_LIMIT } from './api-client.js'
 import { ApiError, normalizeEnvelope, parseEnvelope, SYNTHETIC_REQUEST_ID } from './envelope.js'
 import type { ResponseLike } from './envelope.js'
 
@@ -195,5 +195,38 @@ describe('ApiClient (shared by web and RN)', () => {
       '/api/v1/algorithm/run',
       '/api/v1/logout',
     ])
+  })
+
+  it('passes pagination params to the notes list and returns the page metadata', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          ok: true,
+          data: { notes: [{ id: 1, title: 'T', body: null }], page: 2, limit: 10, total: 11, hasMore: true },
+          error: null,
+          requestId: 'r',
+        },
+        200,
+      ),
+    )
+    const client = new ApiClient({ fetchImpl: fetchMock })
+    const envelope = await client.listNotes({ page: 2, limit: 10 })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/notes?page=2&limit=10')
+    expect(envelope.data?.page).toBe(2)
+    expect(envelope.data?.limit).toBe(10)
+    expect(envelope.data?.total).toBe(11)
+    expect(envelope.data?.hasMore).toBe(true)
+    expect(envelope.data?.notes).toHaveLength(1)
+  })
+
+  it('refuses invalid pagination params client-side before any network call', async () => {
+    const client = new ApiClient({ fetchImpl: fetchMock })
+    await expect(client.listNotes({ page: 0 })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' })
+    await expect(client.listNotes({ page: 1.5 })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' })
+    await expect(client.listNotes({ limit: 0 })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' })
+    await expect(client.listNotes({ limit: NOTES_MAX_LIMIT + 1 })).rejects.toMatchObject({
+      code: 'INPUT_TOO_LARGE',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

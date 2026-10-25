@@ -217,6 +217,31 @@ async function main() {
     const { res, json } = await call({ path: '/api/v1/notes', jar });
     check('note list returns 200', res.status === 200);
     check('note list contains the created note', Array.isArray(json?.data?.notes) && json.data.notes.some((n) => n.id === noteId));
+    check('note list carries pagination metadata', json?.data?.page === 1 && json?.data?.limit === 50 && json?.data?.total >= 1 && json?.data?.hasMore === false);
+  }
+  {
+    // Second note: exercises the hasMore flag of the bounded list.
+    await call({
+      path: '/api/v1/notes',
+      method: 'POST',
+      body: { title: 'Smoke note 2', body: 'Second note for pagination.' },
+      jar,
+    });
+  }
+  {
+    // Bounded list (review follow-up): explicit limit + clamping above max.
+    const { res, json } = await call({ path: '/api/v1/notes?limit=1&page=1', jar });
+    check('note list honors limit=1', res.status === 200 && json?.data?.notes?.length === 1 && json?.data?.limit === 1);
+    check('note list hasMore=true when more pages exist', json?.data?.hasMore === true && json?.data?.total === 2);
+    const page2 = await call({ path: '/api/v1/notes?limit=1&page=2', jar });
+    check(
+      'note list page=2 returns the other note and closes hasMore',
+      page2.json?.data?.notes?.length === 1 &&
+        page2.json?.data?.notes?.[0]?.id !== json?.data?.notes?.[0]?.id &&
+        page2.json?.data?.hasMore === false,
+    );
+    const clamped = await call({ path: '/api/v1/notes?limit=99999', jar });
+    check('note list clamps limit above max to 100', clamped.json?.data?.limit === 100 && clamped.json?.data?.total === 2);
   }
   {
     const { res, json } = await call({
@@ -234,8 +259,10 @@ async function main() {
     check('note show carries the updated body', json?.data?.note?.body === 'Updated by the smoke script.');
   }
 
-  // -- foreign note ownership: 403, not 404 --------------------------------
+  // -- foreign note ownership: 404 (no-enumeration), NOT 403 ---------------
   // (register a second user; the login block above is intentionally omitted)
+  // Review follow-up: a foreign id must be indistinguishable from a missing
+  // id — the old 403 FORBIDDEN leaked note-id existence to probing clients.
   {
     const jar2 = makeJar();
     await call({
@@ -245,8 +272,15 @@ async function main() {
       jar: jar2,
     });
     const { res, json } = await call({ path: `/api/v1/notes/${noteId}`, jar: jar2 });
-    check('foreign note read returns 403', res.status === 403, `status ${res.status}`);
-    check('foreign note code is FORBIDDEN', json?.error?.code === 'FORBIDDEN');
+    check('foreign note read returns 404 (not 403)', res.status === 404, `status ${res.status}`);
+    check('foreign note code is NOT_FOUND', json?.error?.code === 'NOT_FOUND');
+    // A genuinely missing id produces the IDENTICAL response (status + code):
+    const missing = await call({ path: '/api/v1/notes/999999', jar: jar2 });
+    check('missing note read is also 404 NOT_FOUND', missing.res.status === 404 && missing.json?.error?.code === 'NOT_FOUND');
+    check('foreign and missing notes are indistinguishable', JSON.stringify(json?.error) === JSON.stringify(missing.json?.error));
+    // Writes are equally silent:
+    const put = await call({ path: `/api/v1/notes/${noteId}`, method: 'PUT', body: { title: 'Hacked' }, jar: jar2 });
+    check('foreign note update returns 404', put.res.status === 404, `status ${put.res.status}`);
   }
 
   // -- algorithm workbench --------------------------------------------------

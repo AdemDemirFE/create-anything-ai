@@ -33,5 +33,21 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return [Limit::perMinute(240)->by($request->user()?->id ?: $request->ip())];
         });
+
+        // Per-IP limiter for the UNAUTHENTICATED auth endpoints
+        // (`throttle:auth-ip` on the register/login routes — review
+        // follow-up hardening). Keyed on IP only: these requests have no
+        // user yet. Bounds credential stuffing and bulk account creation
+        // from one address IN ADDITION to the email+IP failed-login
+        // limiter (which only counts failures and never 429s a correct
+        // login before its own budget). Response is 429 + Retry-After via
+        // the ThrottleRequestsException renderer (RATE_LIMITED envelope).
+        // Budget configurable via AUTH_IP_THROTTLE_LIMIT (config/stack.php,
+        // default 30/min); the window is fixed at 60s via Limit::perMinute.
+        $limit = max(1, (int) config('stack.auth_ip_throttle_limit', 30));
+
+        RateLimiter::for('auth-ip', function (Request $request) use ($limit) {
+            return [Limit::perMinute($limit)->by($request->ip() ?: 'unknown')];
+        });
     }
 }
