@@ -159,12 +159,21 @@ passed 53/53 on the first try, no 419s. LESSON re-confirmed: middleware
 wiring for CSRF-skipping API groups MUST be verified over real HTTP; the
 PHPUnit bypass makes the suite blind to it.
 
-### 3.2 Rate limiting (two layers, different jobs)
+### 3.2 Rate limiting (three layers, different jobs)
 
 | Layer | Where | Key | Budget | Response |
 |---|---|---|---|---|
 | `throttle:api` | whole `/api/v1` group | user id or IP | 240/min | 429 `RATE_LIMITED`, coarse abuse guard |
+| `throttle:auth-ip` | register + login only (review follow-up) | client IP | 30 POSTs/min (env `AUTH_IP_THROTTLE_LIMIT`, window fixed 60 s) | 429 `RATE_LIMITED` + `Retry-After` |
 | `LoginRateLimiter` | login only | lowercased email + client IP | 5 FAILED attempts / 60 s (fixed window, array/database cache via `LOGIN_THROTTLE_STORE`) | 429 `RATE_LIMITED` + `Retry-After` |
+
+The per-IP auth limiter closes the hole the email+IP keying leaves open:
+one address rotating UNLIMITED emails at 5 failures each (credential
+stuffing) or mass-creating accounts. It is checked before validation runs,
+applies to every register/login POST regardless of outcome, and is scoped
+to the unauthenticated auth endpoints only (authenticated data routes do
+not consume the budget — pinned by `ApiMiddlewareWiringTest`). Demo-grade
+by design; production should also enforce limits at the edge.
 
 Login limiter semantics (all test-asserted):
 
@@ -204,17 +213,22 @@ Exception renderers map every failure to stable codes
 `CSRF_TOKEN_MISMATCH`, `INTERNAL_ERROR`, `HTTP_<status>` fallback); the
 `Throwable` renderer reports the real exception server-side (`report($e)`)
 and returns the generic envelope. Stack traces/SQL/secrets never reach the
-client (test-asserted).
+client (test-asserted). The `FORBIDDEN` code remains part of the stable
+contract for any future 403; note ownership no longer produces it (§4 —
+foreign notes read exactly like missing ones).
 
 ## 4. Data model
 
 Eloquent (the stack's ORM requirement): `users`, `notes`
 (`user_id` FK, title ≤ 120, body ≤ 5000, indexed), Laravel's standard
 `sessions` + `cache` tables. Ownership is enforced server-side on every
-query (`$user->notes()` scope or explicit `authorizeOwner` check → 403
-`FORBIDDEN` for foreign notes, never 404-masking). Local/tests run sqlite
-(`DB_CONNECTION=sqlite`); production target is PostgreSQL 17 — no raw
-sqlite-specific SQL exists in the app code.
+query (`$user->notes()` scope or the owner check in NoteController →
+**404 `NOT_FOUND` for foreign notes** — identical to a missing id, so
+note ids carry no existence oracle; review follow-up, originally 403
+`FORBIDDEN`). Lists are bounded server-side (`?limit=` default 50 / max
+100 + `?page=`, pagination metadata in the envelope; review follow-up).
+Local/tests run sqlite (`DB_CONNECTION=sqlite`); production target is
+PostgreSQL 17 — no raw sqlite-specific SQL exists in the app code.
 
 ## 5. React Native thin shell (mobile/ — NOT VERIFIED) + shared strategy
 
@@ -254,7 +268,7 @@ format it speaks IS verified end-to-end (PHPUnit + two HTTP smoke suites).
 
 - `laravel/` — PHPUnit feature suite (54 tests), `tsc --noEmit` clean.
 - `laravel/scripts/smoke.mjs` — real-HTTP API contract walk (53 checks):
-  register/login/CRUD/403/throttle/429+Retry-After/request-id echo/logout
+  register/login/CRUD/404-foreign-note/throttle/429+Retry-After/request-id echo/logout
   revocation.
 - `laravel/scripts/smoke-web.mjs` — real-HTTP web-flow walk (16 checks):
   Inertia shell rendering, Ziggy `route()` injection, CSRF + session web

@@ -1,7 +1,14 @@
 import { Head, router } from '@inertiajs/react';
 import type { NoteDto } from '../../types';
 
-export default function NotesIndex({ notes }: { notes: NoteDto[] }) {
+interface NotesIndexProps {
+    notes: NoteDto[];
+    /** Bounded-list pagination props (review follow-up; server-controlled). */
+    page?: number;
+    limit?: number;
+}
+
+export default function NotesIndex({ notes, page = 1, limit }: NotesIndexProps) {
     const remove = (id: number) => {
         if (window.confirm('Delete this note?')) {
             router.delete(route('notes.destroy', id));
@@ -64,6 +71,20 @@ export default function NotesIndex({ notes }: { notes: NoteDto[] }) {
                                 </li>
                             ))}
                         </ul>
+                    )}
+
+                    {/* Bounded list (review follow-up): the server caps the page at
+                        `limit` notes; when the page is exactly full, offer the next
+                        slice. The list is newest-first, so older notes sit on page 2+. */}
+                    {limit !== undefined && notes.length >= limit && (
+                        <div className="mt-4 flex justify-end">
+                            <a
+                                href={route('notes.index', { page: page + 1 })}
+                                className="text-sm text-indigo-600 hover:underline"
+                            >
+                                Older notes →
+                            </a>
+                        </div>
                     )}
                 </main>
             </div>

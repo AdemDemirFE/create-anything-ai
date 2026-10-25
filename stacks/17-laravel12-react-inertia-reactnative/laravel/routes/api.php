@@ -34,8 +34,15 @@ Route::get('/health', fn (Request $request) => \App\Http\Responses\Envelope::ok(
     ['service' => 'stack-17', 'time' => now()->toIso8601String()],
 ))->name('api.health');
 
-Route::post('/register', [RegisteredUserController::class, 'store'])->name('api.register');
-Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('api.login');
+// throttle:auth-ip (review follow-up): per-IP budget for the
+// UNAUTHENTICATED auth endpoints — bounds credential stuffing / bulk
+// account creation from one address in addition to the strict email+IP
+// failed-login limiter. 429 + Retry-After (RATE_LIMITED envelope) when
+// exhausted. Budget is env-tunable (config/stack.php).
+Route::middleware('throttle:auth-ip')->group(function (): void {
+    Route::post('/register', [RegisteredUserController::class, 'store'])->name('api.register');
+    Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('api.login');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/me', fn (Request $request) => \App\Http\Responses\Envelope::ok(
@@ -46,12 +53,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/home', [HomeController::class, 'home'])->name('api.home');
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('api.logout');
 
-    Route::get('/notes', function (Request $request) {
-        return \App\Http\Responses\Envelope::ok(
-            $request,
-            ['notes' => $request->user()->notes()->orderByDesc('created_at')->get(['id', 'title', 'body', 'created_at'])],
-        );
-    })->name('api.notes.index');
+    Route::get('/notes', [NoteController::class, 'indexApi'])->name('api.notes.index');
 
     Route::post('/notes', [NoteController::class, 'store'])->name('api.notes.store');
     Route::get('/notes/{note}', [NoteController::class, 'show'])->name('api.notes.show');

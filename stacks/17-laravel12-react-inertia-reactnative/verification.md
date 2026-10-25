@@ -1,8 +1,9 @@
 # Verification — Stack 17 (TASK-017)
 
 **Verified at (local):** 2026-10-25, 00:00–05:15 UTC+3 (approx.; single
-session)
-**Branch:** `feat/stack-17-laravel12-react-inertia-reactnative`
+session) + review follow-up round same day (§9)
+**Branch:** `feat/stack-17-laravel12-react-inertia-reactnative` (merged as
+PR #30) → review follow-up on `fix/stack-17-review-findings`
 **Scope rule:** every claim below is tied to a command that actually ran in
 this session. Anything not run is marked **UNVERIFIED** with the reason.
 
@@ -71,8 +72,11 @@ stack 17; the suite covers the backend contract, not the page dialect):
   success clears the tally; only failures consume the budget; lockout keyed
   per email+IP.
 - `NoteCrudTest` — notes CRUD over `/api/v1` (201/200/200/200), ownership
-  403 `FORBIDDEN` for foreign notes, validation bounds (title 120, body
-  5000 → 422), Inertia page variants render.
+  **404 `NOT_FOUND` for foreign notes — identical to a missing id**
+  (no-enumeration, review follow-up §9; originally 403 `FORBIDDEN`),
+  validation bounds (title 120, body 5000 → 422), Inertia page variants
+  render, bounded list contract (default 50 / max 100 / page / total /
+  hasMore metadata + clamp/fallback rules, §9).
 - `AlgorithmApiTest` — fixed catalog, run output + measured `execution_ms`
   separate from static `complexity`, unknown id 400 `UNKNOWN_ALGORITHM`,
   oversized input 400 `INPUT_TOO_LARGE` (at-cap accepted), input never
@@ -82,7 +86,13 @@ stack 17; the suite covers the backend contract, not the page dialect):
 - `ApiMiddlewareWiringTest` — regression guard for the CSRF-419 lesson
   (inherited from stack 15): `/api/v1` routes are in the `api` group only
   (no `ValidateCsrfToken`, with `throttle:api` present), web routes keep
-  CSRF.
+  CSRF. Review follow-up: the unauthenticated auth endpoints
+  (`api.register`, `api.login`) additionally carry `throttle:auth-ip`
+  (§9) and authenticated data routes do NOT.
+
+> Counts above reflect the original PR #30 round (54 tests). The
+> review-follow-up round grew the suite to **61 tests / 330 assertions**
+> (all green) — see §9 for the delta.
 
 ## 3. Shared layer + web build + vitest (REAL, PASSED)
 
@@ -182,7 +192,9 @@ What the 53 API checks cover (in order; same contract as stack 15,
 - Login 200 + `stack17_session` cookie captured.
 - Notes: create 201, list contains it, update persists, show returns
   updated body.
-- Foreign note read (second registered user) → 403 `FORBIDDEN`.
+- Foreign note read (second registered user) → **404 `NOT_FOUND`**
+  (review follow-up §9; originally 403 `FORBIDDEN`), foreign ≡ missing
+  envelope, foreign write also 404.
 - Workbench: catalog + `maxInputLength = 10000`; reverse run output
   `dlrow olleh` with numeric `execution_ms` and `complexity: "O(n)"`;
   unknown algorithm 400 `UNKNOWN_ALGORITHM`; oversized input 400
@@ -282,6 +294,10 @@ wire format itself is exercised end-to-end by the PHPUnit + smoke runs
   try.
 - Login throttle: 5 failed / 60 s per email+IP, 429 + `Retry-After`,
   success clears, correct password does not bypass (all test-asserted).
+- Per-IP auth throttle (review follow-up, §9): `throttle:auth-ip` bounds
+  register/login to 30 POSTs/min/IP (env-tunable) IN ADDITION to the
+  email+IP failed-login limiter — closes the credential-stuffing hole
+  where one IP rotates unlimited emails at 5 failures each.
 - `throttle:api` (240/min) is a coarse infra guard, documented as such.
 - X-Request-Id validated against `^[A-Za-z0-9-]{1,64}$` (log-forging
   defense); invalid values replaced, header and body always agree.
@@ -310,11 +326,119 @@ wire format itself is exercised end-to-end by the PHPUnit + smoke runs
   `^[0-9]{2}-...`, category, maturity enum, versions as version-strings,
   verification block; property-name cross-check run in this session). CI
   validate-catalog re-checks on the PR.
-- `unit`: **true** — PHPUnit feature suite (54 tests) + shared-layer
-  vitest (15 tests) + page vitest (9 tests) really ran green.
+- `unit`: **true** — PHPUnit feature suite (61 tests after the review
+  follow-up) + shared-layer vitest (17 tests) + page vitest (9 tests)
+  really ran green.
 - `integration`: **true** — HTTP feature tests over the framework kernel
-  plus the 53-check API smoke and 16-check web-flow smoke against a live
+  plus the 61-check API smoke and 16-check web-flow smoke against a live
   PHP server.
 - `e2e`: **false** — no automated browser/native e2e was run.
 - `lastVerifiedAt`: 2026-10-25T00:00:00Z (UTC date of the green runs).
 - `evidencePath`: `verification.md` (this file).
+
+## 9. Review follow-up round (REAL, PASSED)
+
+Orchestrator review findings on the merged PR #30, applied on a fresh
+`fix/stack-17-review-findings` branch from post-merge `origin/main`
+(`7d21b68`). Same re-land pattern as stack 16's follow-up.
+
+### 9.1 Note ownership 403 → 404 (no-enumeration)
+
+The old `NoteController::authorizeOwner` aborted **403 FORBIDDEN** for a
+foreign note id. That status tells a probing client the id EXISTS (but
+belongs to someone else) — an existence oracle over sequential ids. Fix:
+owner check now aborts **404**, the exact response a MISSING id produces
+(same `NOT_FOUND` envelope code on `/api/v1`, standard 404 page on the web
+surface). Foreign and missing ids are now indistinguishable for read AND
+write (GET/PUT/DELETE).
+
+- Test: `NoteCrudTest::test_another_users_note_is_not_found_like_a_missing_one`
+  — asserts 404 + `NOT_FOUND` for foreign read/update/delete, the note is
+  untouched, and (via the smoke) foreign and missing envelopes are
+  byte-identical.
+- `smoke.mjs` foreign-note block rewritten: 403/FORBIDDEN checks →
+  404/NOT_FOUND + foreign≈missing identity + foreign PUT 404.
+
+### 9.2 Notes list pagination (default + max)
+
+The `/api/v1/notes` list (and the Inertia web index) returned an
+UNBOUNDED `->get()` — one user with a million notes would serialize the
+whole table per request. Fix:
+
+- `limit` query param: default **50**, hard max **100** (larger values
+  clamp — tighten-only), invalid (0/negative/non-numeric) falls back to
+  the default; `page` (>= 1, clamped to 1).
+- Envelope data now carries pagination metadata:
+  `{ notes, page, limit, total, hasMore }` (`total` = the authenticated
+  user's note count; `hasMore = page*limit < total`).
+- Ordering made deterministic: `created_at DESC, id DESC` (id breaks
+  same-second ties) on API list, web index, and dashboard recent-notes.
+- The web `Notes/Index.tsx` page accepts the `page`/`limit` props and
+  shows an "Older notes →" link when the page is exactly full.
+- Shared client (`shared/src/api-client.ts`): `listNotes({ page?, limit? })`
+  builds the query and refuses invalid/oversized params CLIENT-side
+  (`VALIDATION_ERROR` / `INPUT_TOO_LARGE` before any network call);
+  new `NotesPageData` type + `NOTES_MAX_LIMIT = 100`. The bare
+  `listNotes()` call the RN shell makes is unchanged (server default
+  applies) — mobile stays source-compatible.
+- Bounds single-sourced in `config/stack.php`
+  (`notes_list_default_limit` / `notes_list_max_limit`, env-tunable).
+- Tests (new, `NoteCrudTest`): bounded list with page/limit/total/hasMore
+  over 3 pages (no overlap, full coverage), clamp/fallback rules, and the
+  bounded web index (`?limit=2&page=1` reflected in Inertia props).
+
+### 9.3 Per-IP throttle on register/login (OPTIONAL — implemented)
+
+The failed-login limiter keys on email+IP: one IP could rotate unlimited
+emails at 5 failures each (credential stuffing) and mass-create accounts.
+Fix (in addition to, not replacing, that limiter):
+
+- `RateLimiter::for('auth-ip')` in `AppServiceProvider` —
+  `Limit::perMinute(30)->by($request->ip())`, budget from
+  `config('stack.auth_ip_throttle_limit')` (env `AUTH_IP_THROTTLE_LIMIT`;
+  window fixed at 60 s by `perMinute`).
+- Applied as `throttle:auth-ip` on the unauthenticated `POST /register`
+  + `POST /login` API routes ONLY (verified: authenticated data routes do
+  NOT carry it — `ApiMiddlewareWiringTest`). Exhaustion → 429 +
+  `Retry-After` + `RATE_LIMITED` envelope via the existing
+  ThrottleRequestsException renderer.
+- Tests (`ApiThrottleContractTest`): exhausting the per-IP bucket
+  (`md5('auth-ip127.0.0.1')`, the real
+  `ThrottleRequests::handleRequestUsingNamedLimiter` key derivation)
+  429s the next register POST with a valid payload — nothing persisted;
+  clearing the bucket (window expiry) restores 201.
+- The 30/min budget leaves headroom for the real-HTTP smoke (~14 auth
+  POSTs per run) while capping scripted floods; demo-grade by design
+  (edge/production enforcement documented in ARCHITECTURE.md).
+
+### 9.4 Commands and results (this round, all REAL)
+
+```powershell
+# PHPUnit (PHPRC ini for sqlite drivers, as in §2)
+php vendor\phpunit\phpunit\phpunit
+#   → OK (61 tests, 330 assertions), exit 0
+
+cd ..\shared ; npm.cmd test          # → 17 passed (17), exit 0
+                                     #   (15 + 2 new pagination tests)
+npx.cmd tsc --noEmit                 # → clean, exit 0
+
+cd ..\laravel
+npm.cmd run test                     # page vitest → 9 passed (9), exit 0
+npm.cmd run build                    # → ✓ built in 2.29s, exit 0
+
+php artisan migrate:fresh --force
+php -S 127.0.0.1:8017 index.php      # from public/, background
+node scripts\smoke.mjs               # → smoke checks: 61/61 passed, exit 0
+node scripts\smoke-web.mjs           # → web-flow checks: 16/16 passed, exit 0
+```
+
+Delta vs the merged PR #30 round: PHPUnit 54→61 tests (269→330
+assertions), shared vitest 15→17, API smoke 53→61 checks (new: pagination
+metadata, limit=1 + hasMore, page=2 slice, clamp-to-100, foreign-note
+404/NOT_FOUND, foreign≈missing identity, foreign PUT 404). Web smoke
+16/16 unchanged. `php -l` sweep clean on every touched PHP file.
+
+### 9.5 UNVERIFIED (unchanged from §7)
+
+All §7 rows stand: RN runtime, PostgreSQL/Redis paths, `php artisan
+serve`, browser e2e. No new unverified areas introduced by this round.

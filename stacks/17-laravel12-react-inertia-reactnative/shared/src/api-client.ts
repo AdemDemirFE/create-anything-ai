@@ -66,6 +66,19 @@ export interface NoteDto {
   updated_at?: string
 }
 
+/** Pagination metadata returned by the bounded notes list (review follow-up). */
+export interface NotesPageData {
+  notes: NoteDto[]
+  page: number
+  limit: number
+  total: number
+  hasMore: boolean
+}
+
+/** Server-side list bounds (config/stack.php, tightened only). */
+export const NOTES_DEFAULT_LIMIT = 50
+export const NOTES_MAX_LIMIT = 100
+
 export interface ApiClientOptions {
   /** Base URL, e.g. '/api/v1' (web same-origin) or 'http://host/api/v1' (mobile). */
   baseUrl?: string
@@ -143,8 +156,32 @@ export class ApiClient {
   }
 
   // --- notes CRUD ------------------------------------------------------------
-  listNotes(): Promise<Envelope<{ notes: NoteDto[] }>> {
-    return this.request('/notes')
+  /**
+   * Bounded notes list: `?limit=` (1..NOTES_MAX_LIMIT, clamped server-side)
+   * and `?page=` (>= 1). Response carries page/limit/total/hasMore so the
+   * RN shell can drive "load more" without guessing. Oversized/invalid
+   * values are refused CLIENT-side (bounded payloads) and clamped
+   * SERVER-side (tighten-only contract).
+   */
+  async listNotes(options: { page?: number; limit?: number } = {}): Promise<Envelope<NotesPageData>> {
+    const params = new URLSearchParams()
+    if (options.page !== undefined) {
+      if (!Number.isInteger(options.page) || options.page < 1) {
+        throw new ApiError('VALIDATION_ERROR', 'page must be an integer >= 1.', 0, 'client')
+      }
+      params.set('page', String(options.page))
+    }
+    if (options.limit !== undefined) {
+      if (!Number.isInteger(options.limit) || options.limit < 1) {
+        throw new ApiError('VALIDATION_ERROR', 'limit must be an integer >= 1.', 0, 'client')
+      }
+      if (options.limit > NOTES_MAX_LIMIT) {
+        throw new ApiError('INPUT_TOO_LARGE', `limit exceeds the maximum of ${NOTES_MAX_LIMIT}.`, 0, 'client')
+      }
+      params.set('limit', String(options.limit))
+    }
+    const query = params.toString()
+    return this.request(`/notes${query ? `?${query}` : ''}`)
   }
 
   getNote(id: number | string): Promise<Envelope<{ note: NoteDto }>> {
