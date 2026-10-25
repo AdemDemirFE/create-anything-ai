@@ -1,0 +1,12 @@
+{
+  "appId": "ai.createanything.stack02",
+  "appName": "Stack 02 Reference",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

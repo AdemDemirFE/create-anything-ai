@@ -543,3 +543,19 @@ jobs:
             exit 1
           fi
           echo "CI summary: all required checks passed."
+
+  # NOTE (stack-02): the stack-smoke matrix structure (per-stack fast-layer
+  # suites: vitest/build for web layers, pytest/go-test for backends) lands
+  # with PR #39 (ci/catalog-and-stack-gates). When that merges, add:
+  #
+  #   - stack: 02-java25-springboot-angular-ionic
+  #     suite: web
+  #     path: stacks/02-java25-springboot-angular-ionic/web
+  #
+  # to the matrix include list (fast layer: npm ci + npm test + npm run
+  # build). The backend `mvn test` layer is deliberately NOT in CI: it is a
+  # heavyweight JDK-25 suite kept as a manual/local gate (documented in
+  # stacks/02-java25-springboot-angular-ionic/verification.md).
+  #
+  # Tracked by TASK-028 follow-up so the matrix entry lands immediately
+  # after #39 without conflicting with it.
