@@ -7,7 +7,7 @@ Maturity default for new entries: `proposed`. Promotion follows the maturity lad
 | ID | Stack directory | Category | Maturity | Backend / core | Web | Mobile / desktop | Data / infrastructure |
 |---:|---|---|---|---|---|---|---|
 | 01 | `01-java25-springboot-react-flutter` | enterprise-cross-platform | `scaffolded` | Java 25 / Spring Boot 4.1 | React 19 / Vite | Flutter (unverified, no SDK) | PostgreSQL / Redis / H2 (tests) |
-| 02 | `02-java25-springboot-angular-ionic` | enterprise-cross-platform | `proposed` | Java 25 / Spring Boot 3.4 | Angular 19 | Ionic 8 | PostgreSQL 17 / Docker |
+| 02 | `02-java25-springboot-angular-ionic` | enterprise-cross-platform | `scaffolded` | Java 25 / Spring Boot 4.1 (mvn 22/22) | Angular 20 (vitest 12/12 + ng build) | Ionic 8 + Capacitor 7 (unverified, no SDK) | PostgreSQL 16 / H2 (tests) |
 | 03 | `03-dotnet9-blazor-react-maui` | enterprise-cross-platform | `proposed` | .NET 9 Web API | React 19 / Blazor WASM | .NET MAUI | SQL Server 2022 / Redis |
 | 04 | `04-go-fiber-htmx-flutter` | enterprise-cross-platform | `scaffolded` | Go 1.27 / Fiber v3.6 | HTMX 2 (server-rendered, go:embed) | Flutter (unverified, no SDK) | In-memory store |
 | 05 | `05-nestjs-typeorm-nextjs-reactnative` | enterprise-cross-platform | `proposed` | NestJS 11 / TypeORM | Next.js 15 App Router | React Native / Expo | PostgreSQL 17 / Redis |
