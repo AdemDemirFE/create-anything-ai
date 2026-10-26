@@ -1,0 +1,14 @@
+/**
+ * Angular dev proxy: web NEVER serves the API itself — it forwards /api/v1
+ * to the Functions emulator (or any local API base). Separate prefixes
+ * (task rule 7) stay intact: the app owns /, the API owns /api/v1.
+ */
+export default {
+  '/api/v1': {
+    target: 'http://127.0.0.1:5001',
+    secure: false,
+    changeOrigin: false,
+    // Functions emulator path: /<project>/<region>/api/v1/...
+    rewrite: (path: string) => path.replace(/^\/api\/v1/, '/stack12-demo/europe-west1/api/v1'),
+  },
+}

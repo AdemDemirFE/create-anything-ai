@@ -1,0 +1,11 @@
+node_modules/
+lib/
+dist/
+www/
+*.log
+.firebase/
+firestore-debug.log
+ui-debug.log
+firebase-debug.log
+out-tsc/
+.angular/

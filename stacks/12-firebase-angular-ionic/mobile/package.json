@@ -1,0 +1,15 @@
+{
+  "name": "stack12-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stack 12 Capacitor 7 shell — config + docs only (UNVERIFIED: no Android SDK in this environment; see ../verification.md).",
+  "scripts": {
+    "sync-web": "node scripts/sync-web.mjs"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9"
+  },
+  "dependencies": {
+    "@capacitor/core": "7.6.9"
+  }
+}
