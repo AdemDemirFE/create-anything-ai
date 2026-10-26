@@ -31,7 +31,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthService.UserInfo>> register(
             @Valid @RequestBody AuthService.RegisterRequest body, HttpServletRequest request) {
-        AuthService.UserInfo user = authService.register(body);
+        AuthService.UserInfo user = authService.register(body, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.ok(user, RequestIdFilter.currentId(request)));
     }

@@ -8,16 +8,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Config-driven throttle settings (application.yml {@code app.throttle.*}).
  *
  * <ul>
- *   <li>{@code login-max-failed-attempts} — max FAILED login attempts per
- *       identity per fixed window (see AuthService).</li>
- *   <li>{@code login-window-seconds} — window length in seconds.</li>
+ *   <li>{@code login-max-failed-attempts} / {@code login-window-seconds} —
+ *       FAILED login attempts per identity (email+IP) per fixed window,
+ *       gated BEFORE authentication (see AuthService).</li>
+ *   <li>{@code register-max-per-window} / {@code register-window-seconds} —
+ *       registration attempts per client IP per fixed window (abuse
+ *       mitigation for bulk account creation; generous default so normal
+ *       sign-up flows never hit it).</li>
  *   <li>{@code retry-after-seconds} — the {@code Retry-After} header value
- *       advertised with HTTP 429. The header is generated from this value, so
- *       operators tune it without touching code.</li>
+ *       advertised with HTTP 429. The header is generated from this value,
+ *       so operators tune it without touching code.</li>
  * </ul>
- *
- * Also owns the request-id fallback used by {@code RequestIdFilter} (a
- * server-generated opaque id).
  */
 @ConfigurationProperties(prefix = "app.throttle")
 public class ThrottleProperties {
@@ -25,8 +26,14 @@ public class ThrottleProperties {
     /** Max FAILED login attempts per identity per window. */
     private int loginMaxFailedAttempts = 10;
 
-    /** Fixed window length in seconds. */
+    /** Fixed window length in seconds for the login throttle. */
     private int loginWindowSeconds = 60;
+
+    /** Max registration attempts per client IP per register window. */
+    private int registerMaxPerWindow = 30;
+
+    /** Fixed window length in seconds for the register throttle. */
+    private int registerWindowSeconds = 60;
 
     /** Retry-After seconds advertised with HTTP 429. */
     private long retryAfterSeconds = 60;
@@ -45,6 +52,22 @@ public class ThrottleProperties {
 
     public void setLoginWindowSeconds(int loginWindowSeconds) {
         this.loginWindowSeconds = loginWindowSeconds;
+    }
+
+    public int getRegisterMaxPerWindow() {
+        return registerMaxPerWindow;
+    }
+
+    public void setRegisterMaxPerWindow(int registerMaxPerWindow) {
+        this.registerMaxPerWindow = registerMaxPerWindow;
+    }
+
+    public int getRegisterWindowSeconds() {
+        return registerWindowSeconds;
+    }
+
+    public void setRegisterWindowSeconds(int registerWindowSeconds) {
+        this.registerWindowSeconds = registerWindowSeconds;
     }
 
     public long getRetryAfterSeconds() {

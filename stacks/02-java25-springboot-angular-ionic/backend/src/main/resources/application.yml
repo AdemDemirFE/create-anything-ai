@@ -26,10 +26,12 @@ app:
     allowed-origins: http://localhost:4200,http://127.0.0.1:4200
   trusted-proxies: ""  # XFF is IGNORED unless set (see AuthService / ARCHITECTURE.md)
   throttle:
-    # Login throttle bounds + advertised Retry-After: config-driven, operators
-    # tune without code changes (ThrottleProperties).
+    # Login + register throttle bounds and the advertised Retry-After:
+    # config-driven, operators tune without code changes (ThrottleProperties).
     login-max-failed-attempts: 10
     login-window-seconds: 60
+    register-max-per-window: 30
+    register-window-seconds: 60
     retry-after-seconds: 60
 
 management:
