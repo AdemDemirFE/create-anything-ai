@@ -1,0 +1,16 @@
+{
+  "name": "stack05-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stack 05 shared layer: envelope types + transport-agnostic API client, consumed by BOTH the Next.js web app and the React Native (Expo) shell.",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  }
+}

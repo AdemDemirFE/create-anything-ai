@@ -1,18 +1,53 @@
 {
   "id": "05-nestjs-typeorm-nextjs-reactnative",
-  "name": "Nestjs / Typeorm / Nextjs / Reactnative",
+  "name": "NestJS / TypeORM / Next.js / React Native",
   "category": "enterprise-cross-platform",
-  "maturity": "proposed",
-  "description": "Proposed catalog entry 05. Specification, environment, and verification are pending; see docs/STACK_CATALOG.md.",
-  "requires": [
-    "to-be-determined"
+  "maturity": "scaffolded",
+  "description": "Enterprise cross-platform stack: NestJS 11 + TypeORM backend (cookie sessions with SHA-256-hashed opaque tokens, scrypt-in-worker password hashing, config-driven login throttle with 429 + Retry-After, documents CRUD, fixed-catalog algorithm workbench with a tighten-only engine bound) implemented and tested (vitest + supertest on a REAL better-sqlite3 in-memory database, 54 tests, plus a 32-check real-HTTP smoke); Next.js 15 App Router web client on a shared API-client layer implemented, production-built and tested (8 screen tests); shared envelope/ApiClient layer tested (12 tests); React Native (Expo) shell authored over the same shared layer but UNVERIFIED (no mobile SDK).",
+  "backend": {
+    "language": "TypeScript",
+    "framework": "NestJS",
+    "version": "11.2.8"
+  },
+  "web": {
+    "framework": "Next.js",
+    "buildTool": "next build",
+    "version": "15.5.28"
+  },
+  "mobile": {
+    "framework": "React Native (Expo)"
+  },
+  "data": [
+    "SQLite (tests, better-sqlite3 in-memory)",
+    "PostgreSQL (production target, driver swap)"
   ],
+  "platforms": [
+    "linux",
+    "macos",
+    "windows",
+    "web",
+    "android",
+    "ios"
+  ],
+  "requires": [
+    "Node.js"
+  ],
+  "versions": {
+    "node": "20",
+    "typescript": "5.9.3",
+    "nestjs": "11.2.8",
+    "typeorm": "0.3.31",
+    "next": "15.5.28",
+    "react": "19.1.10",
+    "react-native": "0.76.9",
+    "expo": "52.0.0"
+  },
   "verification": {
-    "manifest": false,
-    "unit": false,
-    "integration": false,
+    "manifest": true,
+    "unit": true,
+    "integration": true,
     "e2e": false,
-    "lastVerifiedAt": null,
-    "evidencePath": null
+    "lastVerifiedAt": "2026-10-25",
+    "evidencePath": "verification.md"
   }
 }

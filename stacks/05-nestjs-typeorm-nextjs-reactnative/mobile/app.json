@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "stack05-mobile",
+    "slug": "stack05-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "supportsTablet": true },
+    "android": { "adaptiveIcon": { "backgroundColor": "#4c7ef3" } },
+    "web": { "bundler": "metro" }
+  }
+}

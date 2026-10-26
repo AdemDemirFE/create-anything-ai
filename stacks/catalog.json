@@ -49,7 +49,7 @@
       "id": "05-nestjs-typeorm-nextjs-reactnative",
       "number": 5,
       "category": "enterprise-cross-platform",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "06-kotlin-ktor-compose-multiplatform",
