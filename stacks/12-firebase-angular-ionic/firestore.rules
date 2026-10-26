@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// Stack 12 Firestore security rules — enforced by the Firestore EMULATOR in
+// tests (rules-unit-testing) and by production when deployed. Server code
+// runs with the Admin SDK (bypasses rules); client apps only talk to the
+// HTTP API, so these rules are defense in depth against direct DB access.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User profiles: readable only by the owner; written only by the server
+    // (Admin SDK). No client writes.
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+
+      // Unique-email key docs: never client-readable (prevents enumeration).
+      match /byEmail/keys/{key} {
+        allow read: if false;
+        allow write: if false;
+      }
+
+      // Owner-scoped documents: exactly the shape the API enforces.
+      match /documents/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Sessions live server-side only; no client access at all.
+    match /sessions/{digest} {
+      allow read, write: if false;
+    }
+
+    // Algorithm run history: owner-scoped, server-written only.
+    match /algorithmRuns/{runId} {
+      allow read: if resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

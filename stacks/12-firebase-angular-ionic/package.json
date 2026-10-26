@@ -1,0 +1,15 @@
+{
+  "name": "stack12-firebase-angular-ionic",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stack 12: Firebase (Cloud Functions + Auth + Firestore emulators) / Angular 19 web / Ionic 8 + Capacitor 7 mobile shell.",
+  "scripts": {
+    "test:functions": "npm --prefix functions run test:emulator",
+    "test:web": "npm --prefix web run test",
+    "build:web": "npm --prefix web run build",
+    "emulators": "firebase emulators:start --only auth,firestore"
+  },
+  "devDependencies": {
+    "firebase-tools": "15.34.1"
+  }
+}

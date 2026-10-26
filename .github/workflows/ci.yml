@@ -299,6 +299,12 @@ jobs:
       matrix:
         include:
           # --- Node/vitest build-bearing web + shared layers -----------------
+          - stack: 12-firebase-angular-ionic
+            suite: firebase-emulator
+            path: stacks/12-firebase-angular-ionic
+          - stack: 12-firebase-angular-ionic
+            suite: web
+            path: stacks/12-firebase-angular-ionic/web
           - stack: 08-supabase-react-vite
             suite: web
             path: stacks/08-supabase-react-vite/web
@@ -344,10 +350,35 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js (vitest/build suites)
-        if: ${{ matrix.suite == 'web' || matrix.suite == 'shared-ts' || matrix.suite == 'server+shared+web' }}
+        if: ${{ matrix.suite == 'web' || matrix.suite == 'shared-ts' || matrix.suite == 'server+shared+web' || matrix.suite == 'firebase-emulator' }}
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+
+      - name: Set up JDK 21 (Firestore/Auth emulator JVM for firebase-emulator)
+        # The Firebase emulators run on a JVM. JDK 21 LTS is pinned because a
+        # JDK 25 boot died once with 0xC000013A locally (see
+        # stacks/12-.../verification.md §7.8); 21 is the documented-stable
+        # pin.
+        if: ${{ matrix.suite == 'firebase-emulator' }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firebase-emulator suite — npm ci + build + vitest under emulators:exec
+        # Runs the REAL Auth (9099) + Firestore (8088) emulators; vitest
+        # drives the same Express app production wraps in onRequest v2.
+        # The firebase CLI itself lives in the stack root devDependencies, so
+        # both lockfiles are installed (functions/ resolves `firebase` from
+        # the parent node_modules when run through npm scripts).
+        if: ${{ matrix.suite == 'firebase-emulator' }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          npm ci
+          npm ci --prefix functions
+          npm run build --prefix functions
+          npm run test:emulator --prefix functions
 
       - name: Set up Python (pytest/django suites)
         if: ${{ matrix.suite == 'pytest' || matrix.suite == 'django-test' }}
@@ -419,7 +450,7 @@ jobs:
         # fails the job unless one of the suite arms above actually ran.
         run: |
           case "${{ matrix.suite }}" in
-            web | shared-ts | server+shared+web | go-test | pytest | django-test)
+            web | shared-ts | server+shared+web | firebase-emulator | go-test | pytest | django-test)
               echo "OK: suite '${{ matrix.suite }}' matched a suite arm and ran its steps."
               ;;
             *)

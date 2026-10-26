@@ -1,0 +1,37 @@
+{
+  "name": "stack12-functions",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stack 12 backend: HTTP API served by Cloud Functions v2 (onRequest) wrapping an Express 4 app, tested against the Firebase Auth + Firestore emulators.",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:emulator": "firebase emulators:exec --only auth,firestore \"npm run test\"",
+    "lint": "tsc --noEmit",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "cookie-parser": "1.4.7",
+    "express": "4.22.3",
+    "firebase-admin": "13.6.0",
+    "firebase-functions": "7.4.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "@types/cookie-parser": "1.4.9",
+    "@types/express": "4.17.25",
+    "@types/node": "24.19.2",
+    "@types/supertest": "7.2.1",
+    "firebase": "13.1.0",
+    "supertest": "7.3.1",
+    "typescript": "5.8.3",
+    "vitest": "4.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

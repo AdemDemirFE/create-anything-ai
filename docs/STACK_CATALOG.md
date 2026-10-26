@@ -17,7 +17,7 @@ Maturity default for new entries: `proposed`. Promotion follows the maturity lad
 | 09 | `09-supabase-nextjs-tailwind` | baas | `proposed` | Supabase | Next.js 15 | Responsive web | PostgreSQL / Realtime |
 | 10 | `10-supabase-flutter-dart` | baas | `proposed` | Supabase | Flutter Web admin | Flutter iOS/Android | PostgreSQL / Supabase Auth |
 | 11 | `11-supabase-react-native-expo` | baas | `proposed` | Supabase Edge Functions | React admin | React Native / Expo | PostgreSQL / Storage |
-| 12 | `12-firebase-angular-ionic` | baas | `proposed` | Firebase Cloud Functions | Angular 19 | Ionic 8 | Firestore / Firebase Auth |
+| 12 | `12-firebase-angular-ionic` | baas | `scaffolded` | Firebase Cloud Functions | Angular 19 | Ionic 8 | Firestore / Firebase Auth |
 | 13 | `13-appwrite-vue3-quasar` | baas | `proposed` | Appwrite | Vue 3 / Quasar | Quasar mobile/desktop packaging | Appwrite storage / database service |
 | 14 | `14-pocketbase-sveltekits-tailwind` | baas | `proposed` | PocketBase | SvelteKit 2 / Tailwind | Svelte PWA | SQLite / realtime |
 | 15 | `15-laravel12-vue3-inertia-flutter` | classic-web | `scaffolded` | PHP 8.3 / Laravel 12.70 / Inertia 2 | Vue 3.5 / Vite | Flutter (unverified, no SDK) | SQLite (tests) / PostgreSQL 17 (production target) |

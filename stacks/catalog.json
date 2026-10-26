@@ -91,7 +91,7 @@
       "id": "12-firebase-angular-ionic",
       "number": 12,
       "category": "baas",
-      "maturity": "proposed"
+      "maturity": "scaffolded"
     },
     {
       "id": "13-appwrite-vue3-quasar",
