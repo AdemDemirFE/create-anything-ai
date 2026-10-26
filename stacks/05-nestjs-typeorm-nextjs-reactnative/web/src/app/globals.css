@@ -1,0 +1,175 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #1c1e21;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e3e5e8;
+}
+
+.brand {
+  font-weight: 700;
+  text-decoration: none;
+  color: #1c1e21;
+}
+
+.nav {
+  display: flex;
+  gap: 14px;
+}
+
+.nav a {
+  color: #444;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.nav a:hover {
+  color: #111;
+}
+
+.main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e3e5e8;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.card p {
+  color: #555;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.field span {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.field input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #c9ccd1;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid #4c7ef3;
+  outline-offset: 1px;
+  border-color: #4c7ef3;
+}
+
+.field select {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #c9ccd1;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+}
+
+button {
+  background: #4c7ef3;
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+button.secondary {
+  background: #eef1f5;
+  color: #1c1e21;
+}
+
+.error {
+  background: #fdecea;
+  border: 1px solid #f5c6c0;
+  color: #8a1f11;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.success {
+  background: #e9f7ee;
+  border: 1px solid #bfe5cd;
+  color: #14532d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.metrics {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.metrics li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px dashed #e3e5e8;
+  font-size: 14px;
+}
+
+pre.output {
+  background: #101418;
+  color: #d7e2ee;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.muted {
+  color: #777;
+  font-size: 13px;
+}

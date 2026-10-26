@@ -10,7 +10,7 @@ Maturity default for new entries: `proposed`. Promotion follows the maturity lad
 | 02 | `02-java25-springboot-angular-ionic` | enterprise-cross-platform | `proposed` | Java 25 / Spring Boot 3.4 | Angular 19 | Ionic 8 | PostgreSQL 17 / Docker |
 | 03 | `03-dotnet9-blazor-react-maui` | enterprise-cross-platform | `proposed` | .NET 9 Web API | React 19 / Blazor WASM | .NET MAUI | SQL Server 2022 / Redis |
 | 04 | `04-go-fiber-htmx-flutter` | enterprise-cross-platform | `scaffolded` | Go 1.27 / Fiber v3.6 | HTMX 2 (server-rendered, go:embed) | Flutter (unverified, no SDK) | In-memory store |
-| 05 | `05-nestjs-typeorm-nextjs-reactnative` | enterprise-cross-platform | `proposed` | NestJS 11 / TypeORM | Next.js 15 App Router | React Native / Expo | PostgreSQL 17 / Redis |
+| 05 | `05-nestjs-typeorm-nextjs-reactnative` | enterprise-cross-platform | `scaffolded` | Node.js 20+ / NestJS 11 / TypeORM 0.3 (better-sqlite3 in tests) | Next.js 15 App Router / React 19 | React Native / Expo (unverified, no SDK) | SQLite (tests) / PostgreSQL 17 (production target) |
 | 06 | `06-kotlin-ktor-compose-multiplatform` | enterprise-cross-platform | `proposed` | Kotlin 2.1 / Ktor 3 | Compose Web (validate status) | Compose Multiplatform | PostgreSQL 17 / Exposed |
 | 07 | `07-rust-actix-leptos-tauri` | enterprise-cross-platform | `proposed` | Rust 1.85 / Actix Web | Leptos 0.7 WASM | Tauri v2 | PostgreSQL 17 / Diesel |
 | 08 | `08-supabase-react-vite` | baas | `scaffolded` | — (BaaS: no custom backend; Supabase GoTrue/PostgREST) | React 18 / Vite / TypeScript | — (browser-only client) | PostgreSQL / RLS (statically audited; runtime unverified, no Docker) |
