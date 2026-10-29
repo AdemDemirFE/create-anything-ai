@@ -30,13 +30,17 @@ never proxied through the API. The only shared surface is the JSON envelope.
   by a server-generated UUID. Header and body can never diverge. Client
   input is validated before reuse, never reflected verbatim.
 - **Throttle (config-driven)**: `config/ThrottleProperties`
-  (`app.throttle.*`) feeds `AuthService` — max FAILED logins per identity
-  (normalized email + client IP) per fixed window; exceeding it throws
-  `RateLimitedException`, mapped to HTTP 429 with `Retry-After` in seconds
-  from `app.throttle.retry-after-seconds` (default 60; operators tune it
-  without code changes). Only FAILED attempts consume the budget; a
-  successful login resets the tally. With no trusted proxies configured
-  (default) `X-Forwarded-For` is IGNORED — the TCP peer is the client.
+  (`app.throttle.*`) feeds `AuthService` — the FAILED-login budget per
+  identity (normalized email + client IP) is gated BEFORE authentication:
+  once exhausted, attempts are refused with HTTP 429 + `Retry-After` in
+  seconds from `app.throttle.retry-after-seconds` EVEN WITH THE CORRECT
+  PASSWORD, so the lock cannot be bypassed and brute force is bounded (a
+  successful login while budget remains resets the tally). Register is
+  throttled per client IP (`app.throttle.register-*`) and race-safe: the
+  `users.email UNIQUE` constraint is the final authority and a lost
+  registration race maps to the standard 409 `EMAIL_TAKEN`, never 500.
+  With no trusted proxies configured (default) `X-Forwarded-For` is
+  IGNORED — the TCP peer is the client.
 - **Normalize-before-unique**: `AppUserDetailsService.normalize` (trim +
   lowercase) runs BEFORE every unique check, insert, and lookup; the
   persistence layer (`users.email UNIQUE`) only ever sees canonical values,
@@ -84,7 +88,7 @@ reference environment; see verification.md §UNVERIFIED.
 
 | Layer  | Suite                                    | Status   |
 |--------|------------------------------------------|----------|
-| backend| `mvn test` (JUnit, REAL HTTP + H2)       | VERIFIED — 22 tests  |
+| backend| `mvn test` (JUnit, REAL HTTP + H2)       | VERIFIED — 25 tests  |
 | web    | `npm test` (vitest) + `npm run build`    | VERIFIED — 12 tests + AOT build |
 | mobile | Capacitor build / device run             | UNVERIFIED (no SDK) |
 | compose| docker compose up                        | UNVERIFIED (declarative only) |

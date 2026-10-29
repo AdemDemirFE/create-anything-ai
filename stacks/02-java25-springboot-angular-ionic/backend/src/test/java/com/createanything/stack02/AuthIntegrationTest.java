@@ -149,6 +149,73 @@ class AuthIntegrationTest {
     }
 
     @Test
+    void lockedAccountRejectsEvenTheCorrectPassword() {
+        restTemplate.postForEntity(
+                url("/api/v1/register"),
+                json("{\"email\":\"Maple.Ridge@Example.com\",\"password\":\"Golden Valley 71\"}"),
+                ApiResponse.class);
+
+        // Exhaust the failure budget for this identity.
+        for (int attempt = 0; attempt < throttleProperties.getLoginMaxFailedAttempts(); attempt++) {
+            ResponseEntity<ApiResponse> failed = restTemplate.postForEntity(
+                url("/api/v1/login"),
+                    json("{\"email\":\"maple.ridge@example.com\",\"password\":\"Wrong Guess 11\"}"),
+                    ApiResponse.class);
+            assertThat(failed.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
+        // CORRECT password after the lock: still 429 RATE_LIMITED with
+        // Retry-After. The throttle gate runs BEFORE authentication, so a
+        // known password cannot bypass the lock (brute force is bounded).
+        ResponseEntity<ApiResponse> correct = restTemplate.postForEntity(
+                url("/api/v1/login"),
+                json("{\"email\":\"maple.ridge@example.com\",\"password\":\"Golden Valley 71\"}"),
+                ApiResponse.class);
+        assertThat(correct.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(correct.getBody().error().code()).isEqualTo("RATE_LIMITED");
+        assertThat(correct.getHeaders().getFirst("Retry-After")).isNotNull();
+    }
+
+    @Test
+    void concurrentRegistrationsOfSameEmailYieldExactlyOneAccount() throws Exception {
+        // RACE: two parallel registrations of the SAME normalized email. Both
+        // can pass the pre-check; the users.email UNIQUE constraint decides.
+        // Expected: exactly one 201 CREATED and one 409 EMAIL_TAKEN (never a
+        // 500), and exactly ONE row in the persistence layer.
+        String email = "amber.meadow@example.com";
+        int threads = 2;
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            java.util.List<java.util.concurrent.Future<ResponseEntity<ApiResponse>>> futures =
+                    new java.util.ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    return restTemplate.postForEntity(
+                            url("/api/v1/register"),
+                            json("{\"email\":\"" + email + "\",\"password\":\"Ribbon Valley 44\"}"),
+                            ApiResponse.class);
+                }));
+            }
+            start.countDown();
+            java.util.Set<Integer> statuses = new java.util.HashSet<>();
+            for (java.util.concurrent.Future<ResponseEntity<ApiResponse>> future : futures) {
+                ResponseEntity<ApiResponse> response = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                statuses.add(response.getStatusCode().value());
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        } finally {
+            pool.shutdownNow();
+        }
+        // Exactly one account survived the race.
+        assertThat(userRepository.findByEmail(email)).isPresent();
+        assertThat(userRepository.findAll().stream()
+                .filter(user -> email.equals(user.getEmail())).count()).isEqualTo(1);
+    }
+
+    @Test
     void successfulLoginResetsThrottleCounter() {
         restTemplate.postForEntity(
                 url("/api/v1/register"),
@@ -218,6 +285,33 @@ class AuthIntegrationTest {
                 url("/api/v1/home"), org.springframework.http.HttpMethod.GET,
                 new HttpEntity<>(sessionHeaders), String.class);
         assertThat(after.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void logoutWithoutCsrfTokenIsRejected() {
+        restTemplate.postForEntity(
+                url("/api/v1/register"),
+                json("{\"email\":\"Willow.Summit@Example.com\",\"password\":\"Ribbon Creek 25\"}"),
+                ApiResponse.class);
+        ResponseEntity<ApiResponse> login = restTemplate.postForEntity(
+                url("/api/v1/login"),
+                json("{\"email\":\"willow.summit@example.com\",\"password\":\"Ribbon Creek 25\"}"),
+                ApiResponse.class);
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Session cookie ONLY (no X-XSRF-TOKEN echo): logout is a
+        // state-changing POST, so the double-submit CSRF check must reject
+        // it (403 FORBIDDEN) — an attacker page cannot force a logout by
+        // simply replaying the victim's cookie cross-site.
+        HttpHeaders cookieOnly = new HttpHeaders();
+        login.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, java.util.List.of())
+                .forEach(cookie -> cookieOnly.add(HttpHeaders.COOKIE, cookie.split(";")[0]));
+
+        ResponseEntity<ApiResponse> csrfMissing = restTemplate.exchange(
+                url("/api/v1/logout"), org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(cookieOnly), ApiResponse.class);
+        assertThat(HttpStatus.valueOf(csrfMissing.getStatusCode().value()))
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     private static HttpEntity<String> json(String payload) {

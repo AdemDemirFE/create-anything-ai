@@ -30,8 +30,13 @@ Suites:
   logins throttle at `app.throttle.login-max-failed-attempts` with HTTP 429
   `RATE_LIMITED` and `Retry-After` EQUAL TO THE CONFIGURED VALUE (test
   mutates the setting to 45 and asserts the header reads `45` — the header
-  is config-driven, not a constant); successful login resets the tally;
-  logout invalidates the session (home 200 → logout → 401).
+  is config-driven, not a constant); a LOCKED identity is refused 429 EVEN
+  WITH THE CORRECT PASSWORD (throttle gates before authentication, so the
+  lock cannot be bypassed); TWO PARALLEL registrations of the same email
+  yield exactly one 201 + one 409 and exactly one row (unique-constraint
+  race safety, no 500); successful login resets the tally; logout
+  invalidates the session (home 200 → logout → 401); logout WITHOUT the
+  CSRF echo is rejected 403 (cross-site logout protection).
 - `AlgorithmEngineTest` — the four fixed algorithms (reverse, palindrome,
   fizzbuzz, wordcount): golden outputs, bounded-input rejection (blank,
   out-of-range, oversized with the 10 000 cap), measured-vs-theoretical
@@ -41,10 +46,10 @@ Suites:
   `execution_ms` vs `complexity`; unknown algorithm → `UNKNOWN_ALGORITHM`;
   oversized input → `VALIDATION_ERROR` (bean validation).
 
-Result: **exit 0 — 22 tests, 0 failures, 0 errors, 0 skipped.**
-(Classes: AlgorithmEngineTest 8, AuthIntegrationTest 6, EnvelopeContractTest 5,
-HomeAndAlgorithmIntegrationTest 3 — captured from the surefire summary,
-`mvn test` with JDK 25.0.2, exit code 0.)
+Result: **exit 0 — 25 tests, 0 failures, 0 errors, 0 skipped.**
+(Classes: AlgorithmEngineTest 8, AuthIntegrationTest 9,
+EnvelopeContractTest 5, HomeAndAlgorithmIntegrationTest 3 — captured from
+the surefire summary, `mvn test` with JDK 25.0.2, exit code 0.)
 
 ## 2. VERIFIED — web (vitest + production build)
 
