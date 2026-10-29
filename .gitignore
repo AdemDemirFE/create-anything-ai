@@ -1,61 +1,14 @@
-# Environment and secrets
-.env
-.env.*
-!.env.example
-!.env.test.example
-secrets/
-credentials/
-
-# Dependencies and build output
-node_modules/
-vendor/
-target/
-bin/
-obj/
-.venv/
-venv/
-__pycache__/
-.pnpm-store/
+﻿# Frontend build output
+frontend-web/dist/
+# Flutter artifacts (SDK not present, but keep ignored for future runs)
 .dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-build/
-ios/Pods/
-android/.gradle/
-android/app/build/
-*.apk
-*.aab
-*.ipa
+flutter_windows.zip
 
-# IDE and OS
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
+# Backend build output
+backend/target/
 
-# Databases, logs, runtime data
-*.sqlite
-*.sqlite3
-*.db
-*.log
-logs/
-pgdata/
-redisdata/
+# Node dependencies
+node_modules/
 
-# Certificates and private keys
-*.pem
-*.key
-*.p12
-*.jks
-*.keystore
-
-# Test output
-coverage/
-test-results/
-playwright-report/
+# Local tool state (Nimbalyst office sessions)
+nimbalyst-local/

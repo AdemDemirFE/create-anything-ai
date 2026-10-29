@@ -1,5 +1,0 @@
-﻿# Frontend build output
-frontend-web/dist/
-# Flutter artifacts (SDK not present, but keep ignored for future runs)
-.dart_tool/
-flutter_windows.zip
